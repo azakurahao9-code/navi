@@ -1,0 +1,2143 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NavTrack 15m | Sistema Geodésico, Batimetría y Seguridad Náutica</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS & JS para el mapa náutico/satelital -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <!-- Google Fonts: Inter y JetBrains Mono para telemetría -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        nautical: {
+                            950: '#040b14',
+                            900: '#081322',
+                            850: '#0c1a2e',
+                            800: '#0f2137',
+                            700: '#183354',
+                            600: '#234a78',
+                            accent: '#00e5ff',
+                            amber: '#f59e0b',
+                            emerald: '#10b981',
+                            rose: '#f43f5e'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #040b14;
+            color: #e2e8f0;
+        }
+        
+        /* Scrollbar estilizada */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #081322;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #183354;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00e5ff;
+        }
+
+        /* Estilos de Leaflet en modo puente náutico */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: #081322 !important;
+            color: #f8fafc !important;
+            border: 1px solid #183354;
+            border-radius: 0.75rem !important;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.7) !important;
+        }
+        .leaflet-container {
+            font-family: 'Inter', sans-serif !important;
+            background: #040b14 !important;
+        }
+        .leaflet-control-layers {
+            background: #081322 !important;
+            color: #e2e8f0 !important;
+            border: 1px solid #183354 !important;
+            border-radius: 0.5rem !important;
+        }
+        
+        /* Efectos de pulso */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.8; }
+            100% { transform: scale(2.4); opacity: 0; }
+        }
+        .vessel-pulse {
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes blink-alert {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(1.12); }
+        }
+        .grounding-alert {
+            animation: blink-alert 1.2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
+
+    <!-- Notificación Toast Flotante -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Barra Superior / Header Náutico -->
+    <header class="bg-nautical-900/95 backdrop-blur-md border-b border-nautical-700/70 sticky top-0 z-50 px-4 py-2.5">
+        <div class="max-w-[1680px] mx-auto flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-cyan-500/10 border border-cyan-400/40 flex items-center justify-center text-cyan-400 shadow-[0_0_15px_rgba(0,229,255,0.25)]">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <circle cx="12" cy="12" r="9" stroke-width="1.75"/>
+                        <polygon points="12 7 14.5 14.5 12 13 9.5 14.5 12 7" fill="currentColor"/>
+                        <path d="M12 3v2M12 19v2M3 12h2M19 12h2" stroke-width="1.75" stroke-linecap="round"/>
+                    </svg>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-base sm:text-lg font-bold tracking-tight text-white">NavTrack <span class="text-cyan-400 font-mono">15m</span></h1>
+                        <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-mono font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            WGS-84 &amp; BATIMETRÍA
+                        </span>
+                        <!-- Status GPS en vivo -->
+                        <span id="header-gps-status" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-mono bg-nautical-800 border border-nautical-600 text-slate-300">
+                            <span id="header-gps-dot" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                            <span id="header-gps-text">GPS: Inactivo</span>
+                        </span>
+                    </div>
+                    <p class="text-xs text-slate-400 hidden sm:block">Aproximación Costera con Calado (UKC), Mareas, Triángulo de Corrientes y GPS en Vivo</p>
+                </div>
+            </div>
+
+            <!-- Selector rápido de escenarios de prueba -->
+            <div class="flex items-center gap-2 flex-wrap">
+                <div class="hidden xl:flex items-center gap-2 bg-nautical-800/80 border border-nautical-700 rounded-lg px-2.5 py-1 text-xs text-slate-300">
+                    <span class="w-2 h-2 rounded-full bg-cyan-400 animate-pulse"></span>
+                    <span>Clic en mapa para mover <strong>Navío</strong> o <strong>Playa</strong></span>
+                </div>
+                <select id="preset-selector" onchange="cargarEscenario(this.value)" class="bg-nautical-800 hover:bg-nautical-700 text-slate-200 text-xs sm:text-sm rounded-lg border border-nautical-600 px-3 py-1.5 focus:outline-none focus:border-cyan-400 transition cursor-pointer">
+                    <option value="cancun">📍 Cancún - Playa Delfines (450m)</option>
+                    <option value="islas">📍 Isla Mujeres - Enfilación Este (590m)</option>
+                    <option value="cozumel">📍 Cozumel Norte - Canal de Arribo (305m)</option>
+                    <option value="tulum">⚠️ Tulum - Barrera de Arrecife Somera (380m)</option>
+                    <option value="progreso">⚓ Progreso Yucatán - Banco de Arena (700m)</option>
+                </select>
+            </div>
+        </div>
+    </header>
+
+    <!-- Contenido Principal -->
+    <main class="flex-1 max-w-[1680px] w-full mx-auto p-3 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5">
+        
+        <!-- COLUMNA IZQUIERDA: Panel de Parámetros, Física Náutica y GPS (4 cols en desktop) -->
+        <section class="lg:col-span-4 flex flex-col gap-4">
+            
+            <!-- Tarjeta 1: Posición Inicial del Navío y GPS Continuo -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                        1. Posición del Navío &amp; GPS
+                    </h2>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="gps-toggle" onclick="alternarSeguimientoGPS()" class="text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 font-medium" title="Iniciar/Detener seguimiento GPS en tiempo real">
+                            <span id="gps-led" class="w-2 h-2 rounded-full bg-slate-500"></span>
+                            <span id="gps-toggle-text">Mi GPS</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-2">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Latitud (° Dec.)</label>
+                        <input type="number" step="0.000001" id="ship-lat" value="21.060250" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Longitud (° Dec.)</label>
+                        <input type="number" step="0.000001" id="ship-lon" value="-86.774500" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400 transition">
+                    </div>
+                </div>
+
+                <!-- Barra de Estado del GPS -->
+                <div id="gps-status" class="hidden mt-2 p-2 rounded-xl bg-nautical-950/80 border border-nautical-800 text-[11px] font-mono flex items-center justify-between">
+                    <span id="gps-status-msg" class="text-slate-300">Conectando...</span>
+                    <label class="flex items-center gap-1.5 cursor-pointer text-slate-400 text-[10px] ml-2">
+                        <input type="checkbox" id="gps-autocenter" checked class="rounded border-nautical-700 bg-nautical-900 text-cyan-500 focus:ring-0">
+                        <span>Auto-centrar</span>
+                    </label>
+                </div>
+                <div id="gps-track-status" class="hidden mt-2 grid grid-cols-3 gap-2">
+                    <div class="rounded-lg bg-nautical-950/80 border border-nautical-800 px-2 py-1.5">
+                        <span class="block text-[9px] text-slate-500">Puntos 15m</span>
+                        <span id="gps-track-count" class="text-xs text-cyan-300 font-mono">0</span>
+                    </div>
+                    <div class="rounded-lg bg-nautical-950/80 border border-nautical-800 px-2 py-1.5">
+                        <span class="block text-[9px] text-slate-500">Distancia real</span>
+                        <span id="gps-track-distance" class="text-xs text-white font-mono">0 m</span>
+                    </div>
+                    <div class="rounded-lg bg-nautical-950/80 border border-nautical-800 px-2 py-1.5">
+                        <span class="block text-[9px] text-slate-500">Desvío actual</span>
+                        <span id="gps-track-offset" class="text-xs text-emerald-300 font-mono">0.0 m</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 2: Definición de Trayectoria hacia la Playa -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-4 shadow-xl">
+                <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-400 mb-3 flex items-center gap-2">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+                    2. Vector de Aproximación a Playa
+                </h2>
+
+                <!-- Tabs de Modo -->
+                <div class="grid grid-cols-2 gap-1.5 bg-nautical-950 p-1 rounded-xl border border-nautical-800 mb-3">
+                    <button type="button" id="tab-destino" onclick="cambiarModo('destino')" class="py-1.5 px-2 text-xs font-semibold rounded-lg bg-cyan-500 text-nautical-950 shadow transition">
+                        Punto Playa (Destino)
+                    </button>
+                    <button type="button" id="tab-rumbo" onclick="cambiarModo('rumbo')" class="py-1.5 px-2 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition">
+                        Rumbo y Distancia
+                    </button>
+                </div>
+
+                <div id="panel-modo-destino" class="space-y-2.5">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Latitud Playa (°)</label>
+                            <input type="number" step="0.000001" id="beach-lat" value="21.061150" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400 transition">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Longitud Playa (°)</label>
+                            <input type="number" step="0.000001" id="beach-lon" value="-86.778800" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400 transition">
+                        </div>
+                    </div>
+                    <div class="bg-nautical-950/80 border border-nautical-800 rounded-xl px-3 py-1.5 flex justify-between items-center text-xs">
+                        <span class="text-slate-400">Azimut Geodésico:</span>
+                        <span id="calc-bearing-display" class="font-mono font-bold text-cyan-400">282.58° (ONO)</span>
+                    </div>
+                </div>
+
+                <div id="panel-modo-rumbo" class="hidden space-y-2.5">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Rumbo Directo (° 0-360)</label>
+                            <input type="number" step="0.1" min="0" max="360" id="input-bearing" value="282.6" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400 transition">
+                        </div>
+                        <div>
+                            <label class="block text-[11px] text-slate-400 mb-1">Distancia Total (m)</label>
+                            <input type="number" step="15" min="15" max="50000" id="input-distance" value="457" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400 transition">
+                        </div>
+                    </div>
+                    <div class="bg-nautical-950/80 border border-nautical-800 rounded-xl px-3 py-1.5 flex justify-between items-center text-xs">
+                        <span class="text-slate-400">Punto Playa Proyectado:</span>
+                        <span id="calc-dest-display" class="font-mono text-amber-300">21.06115, -86.77880</span>
+                    </div>
+                </div>
+
+                <!-- Intervalo de muestreo (15m por defecto) -->
+                <div class="mt-3 pt-2.5 border-t border-nautical-800 flex items-center justify-between gap-2">
+                    <div>
+                        <label for="step-interval" class="text-xs text-slate-300 font-medium">Espaciado de Estaciones</label>
+                        <div class="text-[10px] text-slate-400">Resolución geodésica</div>
+                    </div>
+                    <div class="flex items-center gap-1.5 w-32">
+                        <input type="number" id="step-interval" value="15" min="1" max="1000" step="1" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-lg px-2.5 py-1 text-xs font-mono font-bold text-center text-white focus:outline-none focus:border-cyan-400">
+                        <span class="text-xs font-mono text-slate-400">m</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 3: FÍSICA NÁUTICA, BATIMETRÍA Y SEGURIDAD DE CALADO (UKC) -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+                        3. Batimetría, Calado &amp; Mareas
+                    </h2>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-300 border border-emerald-500/30">UKC ANALYSIS</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Profundidad máxima sumergida del casco">Calado Buque (Draft)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="vessel-draft" value="1.20" min="0.1" max="15.0" step="0.05" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-l-xl px-3 py-1.5 text-xs font-mono text-rose-300 focus:outline-none focus:border-rose-400">
+                            <span class="bg-nautical-800 border border-l-0 border-nautical-700 px-2 py-1.5 text-xs text-slate-400 rounded-r-xl">m</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Margen mínimo requerido de seguridad bajo la quilla">UKC de Seguridad Mín.</label>
+                        <div class="flex items-center">
+                            <input type="number" id="min-ukc" value="0.50" min="0.0" max="5.0" step="0.05" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-l-xl px-3 py-1.5 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400">
+                            <span class="bg-nautical-800 border border-l-0 border-nautical-700 px-2 py-1.5 text-xs text-slate-400 rounded-r-xl">m</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Marea Actual -->
+                <div class="bg-nautical-950/70 border border-nautical-800 rounded-xl p-2.5 mb-3">
+                    <div class="flex items-center justify-between mb-1.5 text-xs">
+                        <span class="text-slate-300 font-medium">Corrección de Marea (Nivel del Mar)</span>
+                        <span id="tide-display" class="font-mono font-bold text-cyan-400">+0.30 m (Pleamar)</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] font-mono text-slate-500">-1.0m</span>
+                        <input type="range" id="tide-level" min="-1.0" max="2.0" step="0.05" value="0.30" oninput="actualizarSliderMarea(this.value)" class="w-full accent-cyan-400 cursor-pointer">
+                        <span class="text-[10px] font-mono text-slate-500">+2.0m</span>
+                    </div>
+                </div>
+
+                <!-- Profundidades estimadas -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Sonda en Navío (m)</label>
+                        <input type="number" id="depth-origin" value="6.80" min="0.5" max="100.0" step="0.1" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-emerald-300 focus:outline-none focus:border-emerald-400">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Sonda en Playa (m)</label>
+                        <input type="number" id="depth-beach" value="0.20" min="0.0" max="10.0" step="0.05" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-amber-300 focus:outline-none focus:border-amber-400">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tarjeta 4: TRIÁNGULO DE VELOCIDADES & CORRIENTES MARINAS -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                        4. Corrientes Marinas &amp; SOG
+                    </h2>
+                    <span class="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">TRIÁNGULO SOG/COG</span>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Velocidad del barco en el agua (STW)">Velocidad Agua (STW)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="vessel-speed" value="6.5" min="0.5" max="60" step="0.1" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-l-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+                            <span class="bg-nautical-800 border border-l-0 border-nautical-700 px-2 py-1.5 text-xs text-slate-400 rounded-r-xl">kn</span>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">Consumo Motor (L/h)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="fuel-rate" value="18.0" min="0.1" max="5000" step="0.5" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-l-xl px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-400">
+                            <span class="bg-nautical-800 border border-l-0 border-nautical-700 px-2 py-1.5 text-xs text-slate-400 rounded-r-xl">L/h</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3 mb-3">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Hacia qué rumbo tira la corriente marina">Dir. Corriente (° Set)</label>
+                        <input type="number" id="current-dir" value="045" min="0" max="360" step="5" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-xl px-3 py-1.5 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400">
+                    </div>
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1" title="Fuerza o velocidad de la corriente">Fuerza Corriente (Drift)</label>
+                        <div class="flex items-center">
+                            <input type="number" id="current-speed" value="1.2" min="0.0" max="15.0" step="0.1" oninput="recalcularTodo()" class="w-full bg-nautical-950 border border-nautical-700 rounded-l-xl px-3 py-1.5 text-xs font-mono text-cyan-300 focus:outline-none focus:border-cyan-400">
+                            <span class="bg-nautical-800 border border-l-0 border-nautical-700 px-2 py-1.5 text-xs text-slate-400 rounded-r-xl">kn</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Solución Vectorial Calculada -->
+                <div class="bg-nautical-950/90 border border-nautical-800 rounded-xl p-2.5 text-xs space-y-1.5">
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400">Rumbo a Gobernar (HDG sugerido):</span>
+                        <span id="calc-hdg-steer" class="font-mono font-bold text-emerald-400">274.2°</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400">Velocidad sobre Fondo (SOG):</span>
+                        <span id="calc-sog-display" class="font-mono font-bold text-white">5.82 kn (3.00 m/s)</span>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <span class="text-slate-400">Deriva Total (Abatimiento):</span>
+                        <span id="calc-drift-angle" class="font-mono text-amber-400">8.4° Estribor</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- COLUMNA DERECHA: Semáforo de Seguridad, Perfil Batimétrico, Mapa y Desglose (8 cols) -->
+        <section class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- BANNER PRINCIPAL DE SEGURIDAD NÁUTICA Y ALERTA DE VARADURA -->
+            <div id="safety-alert-banner" class="border rounded-2xl p-4 shadow-2xl transition-all duration-300 bg-emerald-950/30 border-emerald-500/40">
+                <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                    <div class="flex items-center gap-3.5">
+                        <div id="safety-alert-icon-box" class="w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0">
+                            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                        </div>
+                        <div>
+                            <div class="flex items-center gap-2">
+                                <h3 id="safety-alert-title" class="text-base font-bold text-white tracking-wide">APROXIMACIÓN SEGURA (AGUAS NAVEGABLES)</h3>
+                                <span id="safety-alert-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">GO</span>
+                            </div>
+                            <p id="safety-alert-desc" class="text-xs text-slate-300 mt-0.5">La profundidad con marea (+0.3m) mantiene una holgura segura bajo quilla (UKC &gt; 0.5m) durante la mayor parte de la derrota.</p>
+                        </div>
+                    </div>
+                    <div id="safety-critical-stat" class="sm:text-right shrink-0 bg-nautical-950/70 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border sm:border-0 border-nautical-800 w-full sm:w-auto">
+                        <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Punto Límite de Varadura</span>
+                        <span id="safety-grounding-distance" class="text-sm sm:text-base font-bold font-mono text-emerald-400">Sin riesgo antes de playa</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Barra de KPIs Náuticos -->
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-3">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Distancia Total</span>
+                    <span id="kpi-distance" class="text-base sm:text-lg font-bold font-mono text-white mt-0.5 block">0 m</span>
+                    <span id="kpi-distance-nm" class="text-[10px] font-mono text-cyan-400">0.00 MN</span>
+                </div>
+
+                <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-3">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 block">SOG / COG Efectivo</span>
+                    <span id="kpi-sog" class="text-base sm:text-lg font-bold font-mono text-cyan-300 mt-0.5 block">0.0 kn</span>
+                    <span id="kpi-cog" class="text-[10px] font-mono text-slate-400">COG: 000°</span>
+                </div>
+
+                <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-3">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Tiempo Arribo (ETA)</span>
+                    <span id="kpi-eta" class="text-base sm:text-lg font-bold font-mono text-white mt-0.5 block">00:00</span>
+                    <span id="kpi-points" class="text-[10px] font-mono text-slate-400">0 estaciones</span>
+                </div>
+
+                <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-3">
+                    <span class="text-[10px] uppercase tracking-wider text-slate-400 block">Calado vs Sonda Mín.</span>
+                    <span id="kpi-depth-min" class="text-base sm:text-lg font-bold font-mono text-amber-400 mt-0.5 block">0.0 m</span>
+                    <span id="kpi-draft-spec" class="text-[10px] font-mono text-slate-400">Calado: 1.20 m</span>
+                </div>
+
+                <div class="col-span-2 sm:col-span-1 bg-nautical-900 border border-emerald-500/40 rounded-2xl p-3">
+                    <span class="text-[10px] uppercase tracking-wider text-emerald-300 block">UKC Mínimo</span>
+                    <span id="kpi-ukc-min" class="text-base sm:text-lg font-bold font-mono text-emerald-400 mt-0.5 block">+0.00 m</span>
+                    <span id="kpi-ukc-status" class="text-[10px] text-emerald-300/80">Margen OK</span>
+                </div>
+            </div>
+
+            <!-- GRÁFICO VISUAL: CORTE TRANSVERSAL Y PERFIL BATIMÉTRICO (CANVAS) -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl p-3 shadow-xl flex flex-col">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-cyan-400"></span>
+                        <h4 class="text-xs font-bold uppercase tracking-wider text-slate-200">Perfil Batimétrico de Aproximación &amp; Calado</h4>
+                    </div>
+                    <div class="flex items-center gap-3 text-[10px] font-mono text-slate-400">
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2 bg-blue-500 inline-block rounded-xs"></span> Agua + Marea</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2 bg-rose-500 inline-block rounded-xs"></span> Quilla (Calado)</span>
+                        <span class="flex items-center gap-1"><span class="w-2.5 h-2 bg-amber-700 inline-block rounded-xs"></span> Fondo Marino</span>
+                    </div>
+                </div>
+                <div class="w-full h-24 sm:h-28 bg-nautical-950 rounded-xl border border-nautical-800 relative overflow-hidden">
+                    <canvas id="bathymetry-canvas" class="w-full h-full block"></canvas>
+                </div>
+            </div>
+
+            <!-- Contenedor del Mapa Interactivo Leaflet con Compás Náutico Flotante -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col relative">
+                <!-- Barra de herramientas del mapa -->
+                <div class="px-4 py-2 bg-nautical-800/90 border-b border-nautical-700 flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-semibold text-slate-200">Modo de Clic:</span>
+                        <div class="inline-flex rounded-lg bg-nautical-950 p-0.5 border border-nautical-700">
+                            <button type="button" id="click-mode-beach" onclick="setMapClickMode('beach')" class="px-2.5 py-1 text-xs font-medium rounded-md bg-amber-500 text-nautical-950 transition">
+                                🎯 Fijar Playa
+                            </button>
+                            <button type="button" id="click-mode-ship" onclick="setMapClickMode('ship')" class="px-2.5 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-white transition">
+                                🚢 Mover Navío
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <!-- Botón Toggle Brújula -->
+                        <button type="button" id="btn-toggle-compass" onclick="alternarVisibilidadBrujula()" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-300 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Mostrar u ocultar la Brújula Náutica">
+                            <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polygon points="12 3 15 12 12 21 9 12" fill="currentColor"/>
+                            </svg>
+                            <span>Brújula</span>
+                        </button>
+                        <button type="button" onclick="centrarMapa()" class="px-3 py-1 bg-nautical-700 hover:bg-nautical-600 text-xs text-white rounded-lg transition flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
+                            Encuadrar
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Widget Flotante: Brújula Náutica Táctica (Compás de Rumbo) -->
+                <div id="compass-widget" class="absolute top-12 right-3 z-[400] bg-nautical-950/90 backdrop-blur-md border border-nautical-700/90 rounded-2xl p-2.5 shadow-2xl transition-all duration-300 w-[170px] sm:w-[185px] select-none">
+                    <!-- Cabecera del Compás -->
+                    <div class="flex items-center justify-between pb-1.5 border-b border-nautical-800 text-[11px]">
+                        <span class="font-bold text-slate-200 flex items-center gap-1">
+                            <span class="text-cyan-400 text-xs">🧭</span> COMPÁS
+                        </span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="alternarMinimizadoBrujula()" id="btn-minimize-compass" class="text-slate-400 hover:text-white px-1 py-0.5 rounded text-xs leading-none font-mono" title="Minimizar / Expandir Compás">
+                                ─
+                            </button>
+                            <button type="button" onclick="alternarVisibilidadBrujula()" class="text-slate-400 hover:text-rose-400 px-1 py-0.5 rounded text-xs leading-none font-mono" title="Cerrar Compás">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenido expandido del Compás -->
+                    <div id="compass-expanded-content" class="mt-2 flex flex-col items-center">
+                        <div class="w-[136px] h-[136px] relative">
+                            <!-- SVG Dial Náutico de 360 Grados -->
+                            <svg id="compass-svg" viewBox="0 0 200 200" class="w-full h-full drop-shadow-lg">
+                                <!-- Bisel exterior estático -->
+                                <circle cx="100" cy="100" r="96" fill="#081322" stroke="#183354" stroke-width="3"/>
+                                <circle cx="100" cy="100" r="89" fill="none" stroke="#234a78" stroke-width="1.5" stroke-dasharray="2, 4"/>
+                                
+                                <!-- Rosa de los vientos graduada (Gira en Head-Up o Sensor) -->
+                                <g id="compass-rose-group" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <circle cx="100" cy="100" r="85" fill="#040b14" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="1"/>
+                                    
+                                    <!-- Puntos Cardinales e Intercardinales -->
+                                    <text x="100" y="26" text-anchor="middle" font-size="14" font-weight="bold" fill="#00e5ff" font-family="'Inter', sans-serif">N</text>
+                                    <text x="176" y="105" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">E</text>
+                                    <text x="100" y="182" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">S</text>
+                                    <text x="24" y="105" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">W</text>
+                                    
+                                    <text x="153" y="47" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">NE</text>
+                                    <text x="155" y="157" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">SE</text>
+                                    <text x="45" y="157" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">SW</text>
+                                    <text x="45" y="47" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">NW</text>
+                                    
+                                    <!-- Marcas de graduación cada 30 grados -->
+                                    <line x1="100" y1="16" x2="100" y2="24" stroke="#00e5ff" stroke-width="2.5"/>
+                                    <line x1="142" y1="27" x2="138" y2="34" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="173" y1="58" x2="166" y2="62" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="184" y1="100" x2="176" y2="100" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="173" y1="142" x2="166" y2="138" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="142" y1="173" x2="138" y2="166" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="100" y1="184" x2="100" y2="176" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="58" y1="173" x2="62" y2="166" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="27" y1="142" x2="34" y2="138" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="16" y1="100" x2="24" y2="100" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="27" y1="58" x2="34" y2="62" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="58" y1="27" x2="62" y2="34" stroke="#94a3b8" stroke-width="1.5"/>
+                                </g>
+
+                                <!-- Agujas e Indicadores de Derrota -->
+                                <!-- 1. Vector Corriente Marina (Azul punteado) -->
+                                <g id="compass-needle-current" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="38" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="3, 2"/>
+                                    <polygon points="100,28 96,38 104,38" fill="#3b82f6"/>
+                                </g>
+
+                                <!-- 2. Rumbo a Gobernar CTS (Verde esmeralda) -->
+                                <g id="compass-needle-cts" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="30" stroke="#10b981" stroke-width="2"/>
+                                    <circle cx="100" cy="28" r="3.5" fill="#10b981" stroke="#040b14" stroke-width="1"/>
+                                </g>
+
+                                <!-- 3. Rumbo directo a Playa BRG (Ámbar con puntero objetivo) -->
+                                <g id="compass-needle-brg" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="22" stroke="#f59e0b" stroke-width="2.5"/>
+                                    <polygon points="100,14 94,24 106,24" fill="#f59e0b"/>
+                                </g>
+
+                                <!-- 4. Proa del Buque HDG (Cian náutico) -->
+                                <g id="compass-needle-hdg" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <polygon points="100,20 92,100 100,91 108,100" fill="#00e5ff" opacity="0.95"/>
+                                    <polygon points="100,100 95,124 100,118 105,124" fill="#234a78" opacity="0.75"/>
+                                </g>
+
+                                <!-- Núcleo Digital Central -->
+                                <circle cx="100" cy="100" r="28" fill="#081322" stroke="#183354" stroke-width="2"/>
+                                <text id="compass-center-deg" x="100" y="98" text-anchor="middle" font-size="14" font-weight="bold" fill="#00e5ff" font-family="'JetBrains Mono', monospace">283°</text>
+                                <text id="compass-center-cardinal" x="100" y="112" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8" font-family="'Inter', sans-serif">ONO</text>
+                                
+                                <!-- Línea de Fe / Lubber Line roja en las 12 -->
+                                <polygon points="100,2 96,11 104,11" fill="#f43f5e"/>
+                            </svg>
+                        </div>
+
+                        <!-- Selector de Modo de Brújula -->
+                        <button type="button" onclick="ciclarModoBrujula()" id="compass-mode-btn" class="w-full mt-2 py-1 px-2 rounded-lg bg-nautical-900 hover:bg-nautical-800 border border-nautical-700 text-[10px] font-mono text-cyan-300 transition flex items-center justify-between" title="Alternar modo: Norte Arriba / Proa Arriba / Sensor Dispositivo">
+                            <span class="text-slate-400">Modo:</span>
+                            <span id="compass-mode-label" class="font-bold text-white">Norte-Arriba</span>
+                        </button>
+
+                        <!-- Telemetría compacta del compás -->
+                        <div class="w-full mt-1.5 pt-1.5 border-t border-nautical-800/80 text-[10px] font-mono space-y-0.5">
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Proa HDG:</span><span id="compass-val-hdg" class="text-cyan-300 font-bold">282.6°</span></div>
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Playa BRG:</span><span id="compass-val-brg" class="text-amber-300 font-bold">282.6°</span></div>
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Timón CTS:</span><span id="compass-val-cts" class="text-emerald-300 font-bold">274.2°</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Vista compacta minimizada (oculta por defecto) -->
+                    <div id="compass-minimized-content" class="hidden mt-1 cursor-pointer" onclick="alternarMinimizadoBrujula()">
+                        <div class="flex items-center justify-between bg-nautical-900/90 rounded-lg px-2 py-1 border border-nautical-700 hover:border-cyan-500/50 transition">
+                            <span class="font-mono font-bold text-xs text-cyan-400" id="compass-mini-deg">283° ONO</span>
+                            <span class="text-[9px] text-slate-400">Abrir 🧭</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Lienzo del Mapa -->
+                <div id="map" class="w-full h-[360px] sm:h-[400px] z-10"></div>
+
+                <!-- Leyenda de colores de seguridad del mapa -->
+                <div class="px-4 py-2 bg-nautical-950/90 border-t border-nautical-800 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-400">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Seguro (UKC &ge; 0.5m)</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span> Somero (0 &lt; UKC &lt; 0.5m)</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-rose-500 inline-block"></span> Varadura (UKC &le; 0m)</span>
+                    </div>
+                    <span class="font-mono text-slate-500">Haz clic en cualquier punto para telemetría de sonda</span>
+                </div>
+            </div>
+
+            <!-- Tabla de Desglose de Waypoints con Profundidad y UKC -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl shadow-xl overflow-hidden flex flex-col">
+                <div class="p-3.5 border-b border-nautical-800 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                        <h3 class="text-xs sm:text-sm font-bold text-white flex items-center gap-2">
+                            Estaciones Geodésicas cada <span id="table-interval-label" class="text-cyan-400 font-mono">15m</span>
+                        </h3>
+                        <p class="text-[11px] text-slate-400">Coordenadas, profundidad con marea, holgura bajo quilla (UKC) y evaluación de seguridad</p>
+                    </div>
+
+                    <!-- Botones de Exportación -->
+                    <div class="flex flex-wrap items-center gap-1.5">
+                        <button type="button" onclick="copiarCoordenadas()" class="px-2.5 py-1 bg-nautical-800 hover:bg-nautical-700 border border-nautical-600 text-xs font-medium text-slate-200 rounded-lg transition flex items-center gap-1 active:scale-95">
+                            <svg class="w-3.5 h-3.5 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>
+                            Copiar
+                        </button>
+                        <button type="button" onclick="descargarCSV()" class="px-2.5 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/40 text-xs font-medium text-emerald-300 rounded-lg transition flex items-center gap-1 active:scale-95">
+                            CSV Batimétrico
+                        </button>
+                        <button type="button" onclick="descargarTrayectoGPS()" class="px-2.5 py-1 bg-violet-500/15 hover:bg-violet-500/25 border border-violet-500/40 text-xs font-medium text-violet-300 rounded-lg transition flex items-center gap-1 active:scale-95">
+                            CSV Trayecto GPS
+                        </button>
+                        <button type="button" onclick="descargarGeoJSON()" class="px-2.5 py-1 bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-xs font-medium text-cyan-300 rounded-lg transition flex items-center gap-1 active:scale-95">
+                            GeoJSON
+                        </button>
+                        <button type="button" onclick="descargarGPX()" class="px-2.5 py-1 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-xs font-medium text-amber-300 rounded-lg transition flex items-center gap-1 active:scale-95">
+                            GPX
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Tabla con scroll -->
+                <div class="overflow-x-auto max-h-[300px]">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-nautical-950 sticky top-0 z-10 text-[10px] uppercase tracking-wider text-slate-400 border-b border-nautical-800">
+                            <tr>
+                                <th class="py-2 px-3 font-semibold">Estación</th>
+                                <th class="py-2 px-3 font-semibold">Distancia</th>
+                                <th class="py-2 px-3 font-semibold">Latitud (°)</th>
+                                <th class="py-2 px-3 font-semibold">Longitud (°)</th>
+                                <th class="py-2 px-3 font-semibold">Sonda + Marea</th>
+                                <th class="py-2 px-3 font-semibold">UKC (Quilla)</th>
+                                <th class="py-2 px-3 font-semibold">Tiempo</th>
+                                <th class="py-2 px-3 font-semibold">Estado</th>
+                                <th class="py-2 px-3 font-semibold text-right">Ver</th>
+                            </tr>
+                        </thead>
+                        <tbody id="waypoints-table-body" class="divide-y divide-nautical-800/60 text-xs font-mono">
+                            <!-- Filas dinámicas -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- Textarea para copia segura -->
+    <textarea id="clipboard-helper" class="sr-only" aria-hidden="true"></textarea>
+
+    <script>
+        /**
+         * NAVTRACK 15M - MOTOR GEODÉSICO, BATIMETRÍA Y SEGURIDAD NÁUTICA
+         * WGS-84 (R = 6,371,000m) + Triángulo de velocidades (SOG/COG) + Under-Keel Clearance (UKC).
+         */
+
+        const EARTH_RADIUS_M = 6371000;
+        let currentMode = 'destino';
+        let mapClickMode = 'beach';
+        let generatedWaypoints = [];
+        let routeSummary = {};
+
+        // Variables de GPS en Vivo (Continuo con watchPosition)
+        let gpsWatchId = null;
+        let gpsAccuracyCircle = null;
+        let isFirstGPSFix = true;
+        let sensorHeading = null;
+        let liveTrackPoints = [];
+        let liveTrackStart = null;
+        let liveTrackBearing = null;
+        let liveTrackLastPoint = null;
+        let liveTrackDistance = 0;
+        let liveTrackLayerGroup = null;
+
+        // Variables de la Brújula / Compás Náutico
+        let compassMode = 'norte-arriba'; // 'norte-arriba' | 'proa-arriba' | 'sensor'
+        let deviceCompassHeading = null;
+        let compassVisible = true;
+        let compassMinimized = false;
+        let sensorListenerActive = false;
+
+        // Variables de Leaflet
+        let map;
+        let vesselMarker;
+        let beachMarker;
+        let routeLine;
+        let waypointsLayerGroup;
+        let groundingMarker = null;
+
+        // Escenarios costeros predefinidos
+        const PRESETS = {
+            cancun: {
+                shipLat: 21.060250, shipLon: -86.774500,
+                beachLat: 21.061150, beachLon: -86.778800,
+                bearing: 282.6, distance: 457,
+                depthOrigin: 7.5, depthBeach: 0.2, draft: 1.2, minUkc: 0.5, tide: 0.3,
+                currentDir: 45, currentSpeed: 1.2
+            },
+            islas: {
+                shipLat: 21.235500, shipLon: -86.736200,
+                beachLat: 21.233100, beachLon: -86.731100,
+                bearing: 116.7, distance: 592,
+                depthOrigin: 8.5, depthBeach: 0.4, draft: 1.4, minUkc: 0.5, tide: 0.2,
+                currentDir: 350, currentSpeed: 1.8
+            },
+            cozumel: {
+                shipLat: 20.514200, shipLon: -86.952500,
+                beachLat: 20.512500, beachLon: -86.950200,
+                bearing: 128.2, distance: 305,
+                depthOrigin: 11.0, depthBeach: 0.5, draft: 1.5, minUkc: 0.6, tide: 0.1,
+                currentDir: 10, currentSpeed: 2.2
+            },
+            tulum: {
+                shipLat: 20.218500, shipLon: -87.424800,
+                beachLat: 20.215200, beachLon: -87.428100,
+                bearing: 220.5, distance: 380,
+                depthOrigin: 4.5, depthBeach: 0.1, draft: 1.3, minUkc: 0.6, tide: -0.2,
+                currentDir: 200, currentSpeed: 1.0
+            },
+            progreso: {
+                shipLat: 21.298000, shipLon: -89.664000,
+                beachLat: 21.292000, beachLon: -89.665000,
+                bearing: 188.0, distance: 700,
+                depthOrigin: 3.2, depthBeach: 0.3, draft: 1.1, minUkc: 0.4, tide: 0.1,
+                currentDir: 270, currentSpeed: 0.8
+            }
+        };
+
+        const toRad = (deg) => (deg * Math.PI) / 180;
+        const toDeg = (rad) => (rad * 180) / Math.PI;
+
+        function calcularDistanciaHaversine(lat1, lon1, lat2, lon2) {
+            const dLat = toRad(lat2 - lat1);
+            const dLon = toRad(lon2 - lon1);
+            const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+            return EARTH_RADIUS_M * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        }
+
+        function calcularRumboInicial(lat1, lon1, lat2, lon2) {
+            const phi1 = toRad(lat1);
+            const phi2 = toRad(lat2);
+            const dLambda = toRad(lon2 - lon1);
+            const y = Math.sin(dLambda) * Math.cos(phi2);
+            const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLambda);
+            return (toDeg(Math.atan2(y, x)) + 360) % 360;
+        }
+
+        function calcularPuntoDestino(lat, lon, bearingDeg, distanceMeters) {
+            const delta = distanceMeters / EARTH_RADIUS_M;
+            const theta = toRad(bearingDeg);
+            const phi1 = toRad(lat);
+            const lambda1 = toRad(lon);
+
+            const sinPhi2 = Math.sin(phi1) * Math.cos(delta) + Math.cos(phi1) * Math.sin(delta) * Math.cos(theta);
+            const phi2 = Math.asin(sinPhi2);
+            const y = Math.sin(theta) * Math.sin(delta) * Math.cos(phi1);
+            const x = Math.cos(delta) - Math.sin(phi1) * sinPhi2;
+            const lambda2 = lambda1 + Math.atan2(y, x);
+
+            return {
+                lat: toDeg(phi2),
+                lon: ((toDeg(lambda2) + 540) % 360) - 180
+            };
+        }
+
+        function obtenerPuntoCardinal(deg) {
+            const dirs = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSO', 'SO', 'OSO', 'O', 'ONO', 'NO', 'NNO'];
+            const idx = Math.round(((deg %= 360) < 0 ? deg + 360 : deg) / 22.5) % 16;
+            return dirs[idx];
+        }
+
+        // ==========================================
+        // 2. INICIALIZACIÓN DEL MAPA
+        // ==========================================
+
+        function initMap() {
+            const initLat = parseFloat(document.getElementById('ship-lat').value);
+            const initLon = parseFloat(document.getElementById('ship-lon').value);
+
+            map = L.map('map', {
+                center: [initLat, initLon],
+                zoom: 16,
+                zoomControl: true
+            });
+
+            const sateliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                attribution: 'Tiles &copy; Esri &mdash; Maxar, Earthstar',
+                maxZoom: 19
+            });
+
+            const darkRadarLayer = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; OpenStreetMap &copy; CARTO',
+                subdomains: 'abcd',
+                maxZoom: 20
+            });
+
+            const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19
+            });
+
+            sateliteLayer.addTo(map);
+
+            L.control.layers({
+                "🛰️ Vista Satelital (Playa)": sateliteLayer,
+                "📡 Carta Oscura Radar": darkRadarLayer,
+                "🗺️ Callejero": osmLayer
+            }, null, { position: 'topright' }).addTo(map);
+
+            waypointsLayerGroup = L.layerGroup().addTo(map);
+            liveTrackLayerGroup = L.layerGroup().addTo(map);
+
+            map.on('click', function(e) {
+                const lat = Number(e.latlng.lat.toFixed(6));
+                const lon = Number(e.latlng.lng.toFixed(6));
+
+                if (mapClickMode === 'ship') {
+                    document.getElementById('ship-lat').value = lat;
+                    document.getElementById('ship-lon').value = lon;
+                    mostrarToast(`Navío reposicionado: ${lat}, ${lon}`, 'info');
+                } else {
+                    if (currentMode !== 'destino') cambiarModo('destino');
+                    document.getElementById('beach-lat').value = lat;
+                    document.getElementById('beach-lon').value = lon;
+                    mostrarToast(`Punto playa fijado: ${lat}, ${lon}`, 'amber');
+                }
+                recalcularTodo();
+            });
+        }
+
+        // ==========================================
+        // 3. MOTOR DE CÁLCULO NÁUTICO, FÍSICA & CORRIENTE
+        // ==========================================
+
+        function recalcularTodo() {
+            const shipLat = parseFloat(document.getElementById('ship-lat').value);
+            const shipLon = parseFloat(document.getElementById('ship-lon').value);
+            let stepInterval = parseFloat(document.getElementById('step-interval').value);
+
+            if (isNaN(shipLat) || isNaN(shipLon)) return;
+            if (isNaN(stepInterval) || stepInterval < 1) stepInterval = 15;
+
+            let beachLat, beachLon, totalDistance, bearing;
+
+            if (currentMode === 'destino') {
+                beachLat = parseFloat(document.getElementById('beach-lat').value);
+                beachLon = parseFloat(document.getElementById('beach-lon').value);
+                if (isNaN(beachLat) || isNaN(beachLon)) return;
+
+                totalDistance = calcularDistanciaHaversine(shipLat, shipLon, beachLat, beachLon);
+                bearing = calcularRumboInicial(shipLat, shipLon, beachLat, beachLon);
+
+                document.getElementById('input-bearing').value = bearing.toFixed(1);
+                document.getElementById('input-distance').value = Math.round(totalDistance);
+                document.getElementById('calc-bearing-display').textContent = `${bearing.toFixed(2)}° (${obtenerPuntoCardinal(bearing)})`;
+            } else {
+                bearing = parseFloat(document.getElementById('input-bearing').value) || 0;
+                totalDistance = parseFloat(document.getElementById('input-distance').value) || 15;
+
+                const dest = calcularPuntoDestino(shipLat, shipLon, bearing, totalDistance);
+                beachLat = dest.lat;
+                beachLon = dest.lon;
+
+                document.getElementById('beach-lat').value = beachLat.toFixed(6);
+                document.getElementById('beach-lon').value = beachLon.toFixed(6);
+                document.getElementById('calc-dest-display').textContent = `${beachLat.toFixed(5)}, ${beachLon.toFixed(5)}`;
+            }
+
+            // --- FÍSICA BATIMÉTRICA Y CALADO ---
+            const vesselDraft = parseFloat(document.getElementById('vessel-draft').value) || 1.2;
+            const minUkc = parseFloat(document.getElementById('min-ukc').value) || 0.5;
+            const tideLevel = parseFloat(document.getElementById('tide-level').value) || 0.0;
+            const depthOrigin = parseFloat(document.getElementById('depth-origin').value) || 7.0;
+            const depthBeach = parseFloat(document.getElementById('depth-beach').value) || 0.2;
+
+            // --- TRIÁNGULO DE VELOCIDADES & CORRIENTE ---
+            const stwKnots = parseFloat(document.getElementById('vessel-speed').value) || 6.0;
+            const stwMs = stwKnots * 0.514444;
+            const fuelRateLph = parseFloat(document.getElementById('fuel-rate').value) || 15.0;
+            const currentDirDeg = parseFloat(document.getElementById('current-dir').value) || 0.0;
+            const currentSpeedKn = parseFloat(document.getElementById('current-speed').value) || 0.0;
+            const currentSpeedMs = currentSpeedKn * 0.514444;
+
+            // Vector de corriente (hacia dónde empuja)
+            const cRad = toRad(currentDirDeg);
+            const cVx = currentSpeedMs * Math.sin(cRad);
+            const cVy = currentSpeedMs * Math.cos(cRad);
+
+            // Rumbo a Gobernar (Heading to steer) para contrarrestar la corriente y mantener la derrota directa a la playa
+            const trackRad = toRad(bearing);
+            const crossCurrent = currentSpeedMs * Math.sin(cRad - trackRad);
+            let driftAngleRad = 0;
+            if (stwMs > Math.abs(crossCurrent)) {
+                driftAngleRad = -Math.asin(crossCurrent / stwMs);
+            }
+            const steerHeadingDeg = (bearing + toDeg(driftAngleRad) + 360) % 360;
+
+            // Vector resultante sobre fondo (Ground velocity):
+            const hRad = toRad(steerHeadingDeg);
+            const bVx = stwMs * Math.sin(hRad);
+            const bVy = stwMs * Math.cos(hRad);
+            const gVx = bVx + cVx;
+            const gVy = bVy + cVy;
+            const sogMs = Math.max(0.1, Math.sqrt(gVx * gVx + gVy * gVy));
+            const sogKnots = sogMs / 0.514444;
+            const cogDeg = (toDeg(Math.atan2(gVx, gVy)) + 360) % 360;
+
+            const totalTimeSeconds = totalDistance / sogMs;
+            const totalFuelLiters = (totalTimeSeconds / 3600) * fuelRateLph;
+
+            // Actualizar paneles de corriente
+            document.getElementById('calc-hdg-steer').textContent = `${steerHeadingDeg.toFixed(1)}° (${obtenerPuntoCardinal(steerHeadingDeg)})`;
+            document.getElementById('calc-sog-display').textContent = `${sogKnots.toFixed(2)} kn (${sogMs.toFixed(2)} m/s)`;
+            const driftDeg = toDeg(driftAngleRad);
+            const driftBanda = driftDeg > 0 ? "Babor" : (driftDeg < 0 ? "Estribor" : "Neutro");
+            document.getElementById('calc-drift-angle').textContent = `${Math.abs(driftDeg).toFixed(1)}° a ${driftBanda}`;
+
+            // --- GENERACIÓN DE ESTACIONES CADA 15m Y ANÁLISIS DE FONDO (UKC) ---
+            generatedWaypoints = [];
+            const numSteps = Math.floor(totalDistance / stepInterval);
+            let firstGroundingWp = null;
+            let minUkcEncountered = 999;
+            let minDepthEncountered = 999;
+
+            for (let i = 0; i <= numSteps; i++) {
+                const dist = i * stepInterval;
+                const pt = i === 0 ? { lat: shipLat, lon: shipLon } : calcularPuntoDestino(shipLat, shipLon, bearing, dist);
+                const progressRatio = totalDistance > 0 ? dist / totalDistance : 0;
+
+                // Perfil batimétrico (pendiente con marea sumada)
+                const baseDepth = depthOrigin - progressRatio * (depthOrigin - depthBeach);
+                const actualDepth = Math.max(0, baseDepth + tideLevel);
+                const ukc = actualDepth - vesselDraft;
+
+                if (actualDepth < minDepthEncountered) minDepthEncountered = actualDepth;
+                if (ukc < minUkcEncountered) minUkcEncountered = ukc;
+
+                let safetyStatus = 'safe'; // 'safe' | 'shallow' | 'grounding'
+                if (ukc <= 0) {
+                    safetyStatus = 'grounding';
+                    if (!firstGroundingWp) firstGroundingWp = { index: i, distance: dist, lat: pt.lat, lon: pt.lon, ukc };
+                } else if (ukc < minUkc) {
+                    safetyStatus = 'shallow';
+                }
+
+                const elapsedSeconds = dist / sogMs;
+
+                generatedWaypoints.push({
+                    index: i,
+                    distance: dist,
+                    lat: pt.lat,
+                    lon: pt.lon,
+                    actualDepth: actualDepth,
+                    ukc: ukc,
+                    safetyStatus: safetyStatus,
+                    elapsedSeconds: elapsedSeconds,
+                    isFinalBeach: false
+                });
+            }
+
+            // Punto exacto final en la playa si no coincide con múltiplo
+            const lastWpDist = generatedWaypoints.length > 0 ? generatedWaypoints[generatedWaypoints.length - 1].distance : 0;
+            if (totalDistance - lastWpDist > 0.5) {
+                const beachActualDepth = Math.max(0, depthBeach + tideLevel);
+                const beachUkc = beachActualDepth - vesselDraft;
+                let finalStatus = beachUkc <= 0 ? 'grounding' : (beachUkc < minUkc ? 'shallow' : 'safe');
+                if (beachUkc <= 0 && !firstGroundingWp) {
+                    firstGroundingWp = { index: generatedWaypoints.length, distance: totalDistance, lat: beachLat, lon: beachLon, ukc: beachUkc };
+                }
+
+                generatedWaypoints.push({
+                    index: generatedWaypoints.length,
+                    distance: totalDistance,
+                    lat: beachLat,
+                    lon: beachLon,
+                    actualDepth: beachActualDepth,
+                    ukc: beachUkc,
+                    safetyStatus: finalStatus,
+                    elapsedSeconds: totalTimeSeconds,
+                    isFinalBeach: true
+                });
+            } else if (generatedWaypoints.length > 0) {
+                generatedWaypoints[generatedWaypoints.length - 1].isFinalBeach = true;
+            }
+
+            // Resumen Global
+            routeSummary = {
+                shipLat, shipLon, beachLat, beachLon,
+                totalDistance, bearing, stepInterval,
+                steerHeadingDeg, cogDeg, sogKnots, sogMs,
+                totalTimeSeconds, totalFuelLiters,
+                vesselDraft, minUkc, tideLevel, depthOrigin, depthBeach,
+                minDepthEncountered, minUkcEncountered, firstGroundingWp
+            };
+
+            actualizarSeguridadUI();
+            actualizarKPIs();
+            dibujarPerfilBatimetrico();
+            actualizarMapa();
+            actualizarTabla();
+            actualizarBrujula();
+        }
+
+        // ==========================================
+        // 4. ACTUALIZACIÓN VISUAL Y SEGURIDAD NÁUTICA
+        // ==========================================
+
+        function actualizarSliderMarea(val) {
+            const num = parseFloat(val);
+            const label = num >= 0.5 ? 'Pleamar Alta' : (num > 0 ? 'Pleamar Media' : (num === 0 ? 'Marea Media' : 'Bajamar'));
+            document.getElementById('tide-display').textContent = `${num >= 0 ? '+' : ''}${num.toFixed(2)} m (${label})`;
+            recalcularTodo();
+        }
+
+        function actualizarSeguridadUI() {
+            const s = routeSummary;
+            const banner = document.getElementById('safety-alert-banner');
+            const iconBox = document.getElementById('safety-alert-icon-box');
+            const title = document.getElementById('safety-alert-title');
+            const badge = document.getElementById('safety-alert-badge');
+            const desc = document.getElementById('safety-alert-desc');
+            const groundingDist = document.getElementById('safety-grounding-distance');
+
+            if (s.firstGroundingWp) {
+                // RIESGO DE VARADURA / ENCALLAMIENTO
+                banner.className = "border rounded-2xl p-4 shadow-2xl transition-all duration-300 bg-rose-950/40 border-rose-500/60";
+                iconBox.className = "w-12 h-12 rounded-xl bg-rose-500/20 border border-rose-500/60 flex items-center justify-center text-rose-400 shrink-0 grounding-alert";
+                iconBox.innerHTML = `
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
+                    </svg>
+                `;
+                title.textContent = "PELIGRO: RIESGO INMINENTE DE VARADURA";
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/50";
+                badge.textContent = "NO-GO / VARADURA";
+                
+                const distToBeach = (s.totalDistance - s.firstGroundingWp.distance).toFixed(1);
+                desc.innerHTML = `El buque encallará por falta de sonda en la <strong>Estación #${s.firstGroundingWp.index}</strong> (a <strong>${s.firstGroundingWp.distance.toFixed(0)}m</strong> del navío, <strong>${distToBeach}m antes de la playa</strong>). Calado: ${s.vesselDraft.toFixed(2)}m supera la profundidad disponible.`;
+                groundingDist.className = "text-sm sm:text-base font-bold font-mono text-rose-400";
+                groundingDist.textContent = `Encalla a ${distToBeach}m de playa`;
+            } else if (s.minUkcEncountered < s.minUkc) {
+                // PRECAUCIÓN: AGUAS SOMERAS
+                banner.className = "border rounded-2xl p-4 shadow-2xl transition-all duration-300 bg-amber-950/30 border-amber-500/50";
+                iconBox.className = "w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/50 flex items-center justify-center text-amber-400 shrink-0";
+                iconBox.innerHTML = `
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                    </svg>
+                `;
+                title.textContent = "PRECAUCIÓN: AGUAS SOMERAS (BAJO MARGEN UKC)";
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40";
+                badge.textContent = "CAUTION";
+                desc.textContent = `La sonda permite flotación, pero la holgura bajo quilla cae por debajo del margen de seguridad requerido (${s.minUkc.toFixed(2)}m). Reduzca velocidad y vigile ecosonda.`;
+                groundingDist.className = "text-sm sm:text-base font-bold font-mono text-amber-400";
+                groundingDist.textContent = `UKC mín: +${s.minUkcEncountered.toFixed(2)}m`;
+            } else {
+                // APROXIMACIÓN SEGURA
+                banner.className = "border rounded-2xl p-4 shadow-2xl transition-all duration-300 bg-emerald-950/30 border-emerald-500/40";
+                iconBox.className = "w-12 h-12 rounded-xl bg-emerald-500/20 border border-emerald-500/50 flex items-center justify-center text-emerald-400 shrink-0";
+                iconBox.innerHTML = `
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                `;
+                title.textContent = "APROXIMACIÓN SEGURA (AGUAS NAVEGABLES)";
+                badge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40";
+                badge.textContent = "GO / CLEAR";
+                desc.textContent = `Holgura bajo quilla segura (&gt; ${s.minUkc.toFixed(2)}m) mantenida en toda la aproximación con la marea actual (${s.tideLevel >= 0 ? '+' : ''}${s.tideLevel.toFixed(2)}m).`;
+                groundingDist.className = "text-sm sm:text-base font-bold font-mono text-emerald-400";
+                groundingDist.textContent = "Sin riesgo de encallamiento";
+            }
+        }
+
+        function formatearTiempo(segundos) {
+            if (!isFinite(segundos) || segundos < 0) return "00:00";
+            const mins = Math.floor(segundos / 60);
+            const secs = Math.floor(segundos % 60);
+            if (mins >= 60) {
+                const hrs = Math.floor(mins / 60);
+                const remMins = mins % 60;
+                return `${hrs}h ${remMins.toString().padStart(2, '0')}m`;
+            }
+            return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')} min`;
+        }
+
+        function actualizarKPIs() {
+            const s = routeSummary;
+            document.getElementById('kpi-distance').textContent = `${s.totalDistance.toFixed(1)} m`;
+            document.getElementById('kpi-distance-nm').textContent = `${(s.totalDistance / 1852).toFixed(3)} MN`;
+
+            document.getElementById('kpi-sog').textContent = `${s.sogKnots.toFixed(1)} kn`;
+            document.getElementById('kpi-cog').textContent = `COG: ${s.cogDeg.toFixed(1)}°`;
+
+            document.getElementById('kpi-eta').textContent = formatearTiempo(s.totalTimeSeconds);
+            document.getElementById('kpi-points').textContent = `${generatedWaypoints.length} estaciones`;
+
+            document.getElementById('kpi-depth-min').textContent = `${s.minDepthEncountered.toFixed(2)} m`;
+            document.getElementById('kpi-draft-spec').textContent = `Calado: ${s.vesselDraft.toFixed(2)}m`;
+
+            const ukcEl = document.getElementById('kpi-ukc-min');
+            const ukcStatusEl = document.getElementById('kpi-ukc-status');
+            ukcEl.textContent = `${s.minUkcEncountered >= 0 ? '+' : ''}${s.minUkcEncountered.toFixed(2)} m`;
+
+            if (s.minUkcEncountered <= 0) {
+                ukcEl.className = "text-base sm:text-lg font-bold font-mono text-rose-400 mt-0.5 block";
+                ukcStatusEl.textContent = "VARADURA";
+                ukcStatusEl.className = "text-[10px] text-rose-300 font-bold";
+            } else if (s.minUkcEncountered < s.minUkc) {
+                ukcEl.className = "text-base sm:text-lg font-bold font-mono text-amber-400 mt-0.5 block";
+                ukcStatusEl.textContent = "Aguas Someras";
+                ukcStatusEl.className = "text-[10px] text-amber-300";
+            } else {
+                ukcEl.className = "text-base sm:text-lg font-bold font-mono text-emerald-400 mt-0.5 block";
+                ukcStatusEl.textContent = "Margen Óptimo";
+                ukcStatusEl.className = "text-[10px] text-emerald-300/80";
+            }
+
+            document.getElementById('table-interval-label').textContent = `${s.stepInterval}m`;
+        }
+
+        // ==========================================
+        // 5. CANVAS DEL PERFIL BATIMÉTRICO
+        // ==========================================
+
+        function dibujarPerfilBatimetrico() {
+            const canvas = document.getElementById('bathymetry-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * window.devicePixelRatio;
+            canvas.height = rect.height * window.devicePixelRatio;
+            ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+            const width = rect.width;
+            const height = rect.height;
+            ctx.clearRect(0, 0, width, height);
+
+            const s = routeSummary;
+            const maxDepth = Math.max(10, s.depthOrigin + Math.max(0, s.tideLevel) + 2);
+            const padX = 35;
+            const padY = 18;
+            const plotW = width - padX - 15;
+            const plotH = height - padY * 2;
+
+            const depthToY = (d) => padY + (d / maxDepth) * plotH;
+            const distToX = (d) => padX + (d / s.totalDistance) * plotW;
+
+            // 1. Superficie de agua con marea
+            const waterSurfaceY = depthToY(0);
+            const waterGrad = ctx.createLinearGradient(0, waterSurfaceY, 0, height);
+            waterGrad.addColorStop(0, 'rgba(0, 229, 255, 0.25)');
+            waterGrad.addColorStop(1, 'rgba(8, 19, 34, 0.8)');
+            ctx.fillStyle = waterGrad;
+            ctx.fillRect(padX, waterSurfaceY, plotW, plotH);
+
+            // 2. Fondo Marino (Lecho)
+            ctx.beginPath();
+            ctx.moveTo(padX, depthToY(s.depthOrigin + s.tideLevel));
+            generatedWaypoints.forEach(wp => {
+                const x = distToX(wp.distance);
+                const y = depthToY(wp.actualDepth);
+                ctx.lineTo(x, y);
+            });
+            ctx.lineTo(padX + plotW, height);
+            ctx.lineTo(padX, height);
+            ctx.closePath();
+
+            const seabedGrad = ctx.createLinearGradient(0, padY, 0, height);
+            seabedGrad.addColorStop(0, '#5a3d1c');
+            seabedGrad.addColorStop(1, '#2c1e0e');
+            ctx.fillStyle = seabedGrad;
+            ctx.fill();
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#d97706';
+            ctx.stroke();
+
+            // 3. Línea de Calado del Buque
+            const draftY = depthToY(s.vesselDraft);
+            ctx.beginPath();
+            ctx.setLineDash([4, 4]);
+            ctx.strokeStyle = '#f43f5e';
+            ctx.lineWidth = 1.5;
+            ctx.moveTo(padX, draftY);
+            ctx.lineTo(padX + plotW, draftY);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // 4. Marcador del buque al inicio
+            ctx.fillStyle = '#00e5ff';
+            ctx.beginPath();
+            ctx.arc(padX + 8, waterSurfaceY + 2, 5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Texto descriptivo en el canvas
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '10px JetBrains Mono';
+            ctx.fillText(`${(s.depthOrigin + s.tideLevel).toFixed(1)}m`, 4, depthToY(s.depthOrigin + s.tideLevel) + 3);
+            ctx.fillText(`${s.depthBeach.toFixed(1)}m`, width - 30, depthToY(s.depthBeach + s.tideLevel) - 4);
+            ctx.fillStyle = '#f43f5e';
+            ctx.fillText(`Quilla ${s.vesselDraft.toFixed(1)}m`, padX + 5, draftY - 4);
+
+            // 5. Si hay varadura, marcar zona crítica en rojo
+            if (s.firstGroundingWp) {
+                const groundX = distToX(s.firstGroundingWp.distance);
+                ctx.fillStyle = 'rgba(244, 63, 94, 0.4)';
+                ctx.fillRect(groundX, padY, (padX + plotW) - groundX, plotH);
+
+                ctx.strokeStyle = '#f43f5e';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(groundX, padY);
+                ctx.lineTo(groundX, height);
+                ctx.stroke();
+
+                ctx.fillStyle = '#fda4af';
+                ctx.font = 'bold 9px Inter';
+                ctx.fillText(`VARADURA (${s.firstGroundingWp.distance.toFixed(0)}m)`, groundX + 3, padY + 12);
+            }
+        }
+
+        // ==========================================
+        // 6. ACTUALIZACIÓN DEL MAPA LEAFLET
+        // ==========================================
+
+        function actualizarMapa() {
+            const s = routeSummary;
+
+            if (vesselMarker) map.removeLayer(vesselMarker);
+            if (beachMarker) map.removeLayer(beachMarker);
+            if (routeLine) map.removeLayer(routeLine);
+            if (groundingMarker) map.removeLayer(groundingMarker);
+            waypointsLayerGroup.clearLayers();
+
+            // Línea de trayectoria directa
+            routeLine = L.polyline([
+                [s.shipLat, s.shipLon],
+                [s.beachLat, s.beachLon]
+            ], {
+                color: '#00e5ff',
+                weight: 3,
+                opacity: 0.75,
+                dashArray: '8, 6'
+            }).addTo(map);
+
+            // Orientación: Si el sensor GPS tiene brújula la usamos, si no el rumbo calculado
+            const headingToShow = sensorHeading !== null ? sensorHeading : s.steerHeadingDeg;
+
+            // Marcador del Buque
+            const shipIconHtml = `
+                <div class="relative flex items-center justify-center w-10 h-10">
+                    <div class="absolute inset-0 rounded-full bg-cyan-400/30 vessel-pulse"></div>
+                    <div style="transform: rotate(${headingToShow}deg);" class="w-8 h-8 bg-nautical-950 border-2 border-cyan-400 rounded-full flex items-center justify-center shadow-xl">
+                        <svg class="w-4 h-4 text-cyan-400" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 2L4.5 20.29l.71.71L12 18l6.79 3 .71-.71z"/>
+                        </svg>
+                    </div>
+                </div>
+            `;
+            vesselMarker = L.marker([s.shipLat, s.shipLon], {
+                icon: L.divIcon({ html: shipIconHtml, className: '', iconSize: [40, 40], iconAnchor: [20, 20] }),
+                zIndexOffset: 1000
+            }).addTo(map).bindPopup(`
+                <div class="text-xs font-sans">
+                    <div class="font-bold text-cyan-400 text-sm mb-1">🚢 Navío (Origen)</div>
+                    <div><strong>Lat/Lon:</strong> <span class="font-mono">${s.shipLat.toFixed(6)}, ${s.shipLon.toFixed(6)}</span></div>
+                    <div><strong>Rumbo a Gobernar:</strong> <span class="font-mono text-emerald-400">${s.steerHeadingDeg.toFixed(1)}°</span></div>
+                    <div><strong>SOG Real:</strong> <span class="font-mono">${s.sogKnots.toFixed(1)} kn</span></div>
+                    <div><strong>Calado:</strong> <span class="font-mono text-rose-300">${s.vesselDraft.toFixed(2)} m</span></div>
+                </div>
+            `);
+
+            // Marcador de la Playa
+            const beachIconHtml = `
+                <div class="w-8 h-8 bg-amber-500 border-2 border-white rounded-full flex items-center justify-center shadow-lg text-nautical-950 font-bold text-xs">
+                    🏖️
+                </div>
+            `;
+            beachMarker = L.marker([s.beachLat, s.beachLon], {
+                icon: L.divIcon({ html: beachIconHtml, className: '', iconSize: [32, 32], iconAnchor: [16, 16] }),
+                zIndexOffset: 900
+            }).addTo(map).bindPopup(`
+                <div class="text-xs font-sans">
+                    <div class="font-bold text-amber-400 text-sm mb-1">🎯 Destino: Playa</div>
+                    <div><strong>Distancia:</strong> <span class="font-mono">${s.totalDistance.toFixed(1)} m</span></div>
+                    <div><strong>Sonda Playa + Marea:</strong> <span class="font-mono">${(s.depthBeach + s.tideLevel).toFixed(2)} m</span></div>
+                </div>
+            `);
+
+            // Waypoints cada 15m con semáforo de seguridad
+            generatedWaypoints.forEach((wp) => {
+                if (wp.index === 0) return;
+
+                let colorPunto = '#10b981'; // Seguro
+                let radius = wp.isFinalBeach ? 6 : 4.5;
+                if (wp.safetyStatus === 'grounding') {
+                    colorPunto = '#f43f5e'; // Varadura
+                    radius = 5.5;
+                } else if (wp.safetyStatus === 'shallow') {
+                    colorPunto = '#f59e0b'; // Somero
+                }
+
+                const circle = L.circleMarker([wp.lat, wp.lon], {
+                    radius: radius,
+                    fillColor: colorPunto,
+                    color: '#040b14',
+                    weight: 1.5,
+                    opacity: 1,
+                    fillOpacity: 0.95
+                });
+
+                const badgeEstado = wp.safetyStatus === 'grounding'
+                    ? '<span class="text-rose-400 font-bold">⚠️ VARADURA</span>'
+                    : (wp.safetyStatus === 'shallow' ? '<span class="text-amber-400 font-bold">AGUAS SOMERAS</span>' : '<span class="text-emerald-400">SEGURO</span>');
+
+                circle.bindPopup(`
+                    <div class="text-xs font-sans min-w-[200px]">
+                        <div class="flex items-center justify-between border-b border-slate-700 pb-1 mb-1.5">
+                            <span class="font-bold text-cyan-400">Estación #${wp.index}</span>
+                            <span class="font-mono bg-slate-800 px-1.5 py-0.5 rounded text-[11px]">${wp.distance.toFixed(0)} m</span>
+                        </div>
+                        <div class="space-y-1 font-mono text-[11px]">
+                            <div><span class="text-slate-400">Sonda + Marea:</span> <strong class="text-white">${wp.actualDepth.toFixed(2)} m</strong></div>
+                            <div><span class="text-slate-400">Holgura UKC:</span> <strong class="${wp.ukc <= 0 ? 'text-rose-400' : 'text-emerald-400'}">${wp.ukc >= 0 ? '+' : ''}${wp.ukc.toFixed(2)} m</strong></div>
+                            <div><span class="text-slate-400">Estado:</span> ${badgeEstado}</div>
+                            <div><span class="text-slate-400">Tiempo Paso:</span> ${formatearTiempo(wp.elapsedSeconds)}</div>
+                        </div>
+                    </div>
+                `);
+
+                waypointsLayerGroup.addLayer(circle);
+            });
+
+            // Marcador de Varadura si existe
+            if (s.firstGroundingWp) {
+                const gw = s.firstGroundingWp;
+                const groundHtml = `
+                    <div class="relative flex items-center justify-center w-7 h-7 grounding-alert">
+                        <div class="w-6 h-6 bg-rose-600 border-2 border-white rounded-full flex items-center justify-center text-white text-[11px] font-bold shadow-2xl">
+                            🛑
+                        </div>
+                    </div>
+                `;
+                groundingMarker = L.marker([gw.lat, gw.lon], {
+                    icon: L.divIcon({ html: groundHtml, className: '', iconSize: [28, 28], iconAnchor: [14, 14] }),
+                    zIndexOffset: 950
+                }).addTo(map).bindPopup(`
+                    <div class="text-xs font-sans text-rose-300 font-bold">
+                        ⚠️ LÍMITE DE NAVEGABILIDAD (VARADURA)<br>
+                        <span class="text-slate-300 font-normal font-mono">El buque toca fondo en este punto (Distancia: ${gw.distance.toFixed(0)}m).</span>
+                    </div>
+                `);
+            }
+        }
+
+        // ==========================================
+        // 7. TABLA DE COORDENADAS Y TELEMETRÍA
+        // ==========================================
+
+        function actualizarTabla() {
+            const tbody = document.getElementById('waypoints-table-body');
+            let html = '';
+
+            generatedWaypoints.forEach((wp) => {
+                let badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30';
+                let estadoText = 'SEGURO';
+
+                if (wp.safetyStatus === 'grounding') {
+                    badgeClass = 'bg-rose-500/20 text-rose-300 border-rose-500/50 font-bold';
+                    estadoText = 'VARADURA';
+                } else if (wp.safetyStatus === 'shallow') {
+                    badgeClass = 'bg-amber-500/15 text-amber-300 border-amber-500/40';
+                    estadoText = 'SOMERO';
+                }
+
+                const rowHighlight = wp.safetyStatus === 'grounding'
+                    ? 'bg-rose-500/10'
+                    : (wp.index === 0 ? 'bg-cyan-500/5' : (wp.isFinalBeach ? 'bg-amber-500/5' : 'hover:bg-nautical-800/40'));
+
+                const tagTipo = wp.index === 0
+                    ? '<span class="ml-1 text-[9px] px-1 py-0.5 rounded bg-cyan-500/20 text-cyan-300">NAVÍO</span>'
+                    : (wp.isFinalBeach ? '<span class="ml-1 text-[9px] px-1 py-0.5 rounded bg-amber-500/20 text-amber-300">PLAYA</span>' : '');
+
+                html += `
+                    <tr class="${rowHighlight} transition">
+                        <td class="py-2 px-3 font-semibold text-slate-200 whitespace-nowrap">
+                            #${wp.index} ${tagTipo}
+                        </td>
+                        <td class="py-2 px-3 text-cyan-300 font-medium whitespace-nowrap">
+                            ${wp.distance.toFixed(1)} m
+                        </td>
+                        <td class="py-2 px-3 text-slate-300 whitespace-nowrap">
+                            ${wp.lat.toFixed(6)}
+                        </td>
+                        <td class="py-2 px-3 text-slate-300 whitespace-nowrap">
+                            ${wp.lon.toFixed(6)}
+                        </td>
+                        <td class="py-2 px-3 font-bold text-white whitespace-nowrap">
+                            ${wp.actualDepth.toFixed(2)} m
+                        </td>
+                        <td class="py-2 px-3 whitespace-nowrap ${wp.ukc <= 0 ? 'text-rose-400 font-bold' : 'text-emerald-300'}">
+                            ${wp.ukc >= 0 ? '+' : ''}${wp.ukc.toFixed(2)} m
+                        </td>
+                        <td class="py-2 px-3 text-slate-400 whitespace-nowrap">
+                            ${formatearTiempo(wp.elapsedSeconds)}
+                        </td>
+                        <td class="py-2 px-3 whitespace-nowrap">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] border ${badgeClass}">
+                                ${estadoText}
+                            </span>
+                        </td>
+                        <td class="py-2 px-3 text-right whitespace-nowrap">
+                            <button type="button" onclick="enfocarPunto(${wp.lat}, ${wp.lon}, ${wp.index})" class="text-cyan-400 hover:text-cyan-200 underline text-[11px] font-sans">
+                                Ver
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            tbody.innerHTML = html;
+        }
+
+        // ==========================================
+        // 8. MÓDULO GPS EN TIEMPO REAL (CONTINUO)
+        // ==========================================
+
+        function alternarSeguimientoGPS() {
+            if (gpsWatchId !== null) {
+                detenerGPS(true);
+            } else {
+                iniciarSeguimientoGPS();
+            }
+        }
+
+        function iniciarSeguimientoGPS() {
+            if (!navigator.geolocation) {
+                mostrarToast("Tu navegador no soporta geolocalización GPS.", "rose");
+                return;
+            }
+
+            if (!window.isSecureContext) {
+                mostrarToast("El GPS requiere HTTPS o ejecutarse en localhost.", "rose");
+                return;
+            }
+
+            const status = document.getElementById('gps-status');
+            const statusMsg = document.getElementById('gps-status-msg');
+            status.classList.remove('hidden');
+            statusMsg.textContent = "Buscando satélites GPS...";
+            statusMsg.className = "text-cyan-300";
+
+            document.getElementById('gps-toggle-text').textContent = "Detener";
+            document.getElementById('gps-toggle').className = "text-xs bg-rose-500/15 hover:bg-rose-500/25 text-rose-300 border border-rose-500/40 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 font-semibold";
+            document.getElementById('gps-led').className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+
+            document.getElementById('header-gps-dot').className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+            document.getElementById('header-gps-text').textContent = "GPS: Conectando...";
+
+            isFirstGPSFix = true;
+            liveTrackPoints = [];
+            liveTrackStart = null;
+            liveTrackBearing = null;
+            liveTrackLastPoint = null;
+            liveTrackDistance = 0;
+            if (liveTrackLayerGroup) liveTrackLayerGroup.clearLayers();
+            document.getElementById('gps-track-status').classList.remove('hidden');
+            actualizarEstadoTrayecto();
+            try { localStorage.removeItem('navtrack_live_gps_track'); } catch (e) {}
+            mostrarToast("Iniciando seguimiento GPS en tiempo real...", "info");
+
+            gpsWatchId = navigator.geolocation.watchPosition(
+                (pos) => {
+                    const lat = Number(pos.coords.latitude.toFixed(6));
+                    const lon = Number(pos.coords.longitude.toFixed(6));
+                    const accuracy = Math.round(pos.coords.accuracy);
+
+                    document.getElementById('ship-lat').value = lat;
+                    document.getElementById('ship-lon').value = lon;
+
+                    // Sensor heading y speed si están disponibles
+                    if (pos.coords.heading !== null && !isNaN(pos.coords.heading)) {
+                        sensorHeading = Math.round(pos.coords.heading);
+                    }
+                    if (pos.coords.speed !== null && !isNaN(pos.coords.speed) && pos.coords.speed > 0.2) {
+                        const speedKnots = (pos.coords.speed * 1.94384).toFixed(1);
+                        document.getElementById('vessel-speed').value = speedKnots;
+                    }
+
+                    recalcularTodo();
+
+                    registrarPuntoTrayecto(lat, lon, accuracy, pos.timestamp || Date.now());
+
+                    // Círculo de precisión satelital
+                    if (gpsAccuracyCircle) map.removeLayer(gpsAccuracyCircle);
+                    gpsAccuracyCircle = L.circle([lat, lon], {
+                        radius: accuracy,
+                        color: '#00e5ff',
+                        weight: 1,
+                        fillColor: '#00e5ff',
+                        fillOpacity: 0.10,
+                        dashArray: '3, 4'
+                    }).addTo(map);
+
+                    // Centrado inteligente: La primera vez siempre, y luego solo si auto-centrar está marcado
+                    const autoCenter = document.getElementById('gps-autocenter').checked;
+                    if (isFirstGPSFix || autoCenter) {
+                        map.setView([lat, lon], Math.max(map.getZoom(), 16), { animate: true });
+                        isFirstGPSFix = false;
+                    }
+
+                    statusMsg.textContent = `GPS Activo · Precisión ±${accuracy}m · ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+                    statusMsg.className = accuracy <= 25 ? "text-emerald-300" : "text-amber-300";
+
+                    const speedDisplay = pos.coords.speed ? `${(pos.coords.speed * 1.94384).toFixed(1)}kn` : "";
+                    document.getElementById('header-gps-text').textContent = `GPS: ±${accuracy}m ${speedDisplay}`;
+                },
+                (err) => {
+                    const mensajes = {
+                        1: "Permiso GPS denegado por el usuario.",
+                        2: "Señal de posición no disponible.",
+                        3: "Tiempo de espera de señal GPS agotado."
+                    };
+                    const mensaje = mensajes[err.code] || "Error al acceder al GPS.";
+                    mostrarToast(mensaje, "rose");
+                    detenerGPS(false);
+                    status.classList.remove('hidden');
+                    statusMsg.textContent = mensaje;
+                    statusMsg.className = "text-rose-400";
+                },
+                { enableHighAccuracy: true, timeout: 12000, maximumAge: 1000 }
+            );
+        }
+
+        function normalizarAngulo180(grados) {
+            let resultado = grados;
+            while (resultado > 180) resultado -= 360;
+            while (resultado < -180) resultado += 360;
+            return resultado;
+        }
+
+        function calcularDesvioLateral(lat, lon) {
+            if (!liveTrackStart || liveTrackBearing === null) return 0;
+
+            const distanciaDesdeInicio = calcularDistanciaHaversine(
+                liveTrackStart.lat,
+                liveTrackStart.lon,
+                lat,
+                lon
+            ) / EARTH_RADIUS_M;
+            const rumboDesdeInicio = toRad(calcularRumboInicial(
+                liveTrackStart.lat,
+                liveTrackStart.lon,
+                lat,
+                lon
+            ));
+            const rumboBase = toRad(liveTrackBearing);
+            const desvio = Math.asin(
+                Math.max(-1, Math.min(1,
+                    Math.sin(distanciaDesdeInicio) * Math.sin(rumboDesdeInicio - rumboBase)
+                ))
+            ) * EARTH_RADIUS_M;
+
+            return Math.abs(desvio) < 0.05 ? 0 : desvio;
+        }
+
+        function registrarPuntoTrayecto(lat, lon, accuracy, timestamp) {
+            if (liveTrackStart === null) {
+                liveTrackStart = { lat, lon };
+                liveTrackBearing = routeSummary.bearing;
+                liveTrackLastPoint = { lat, lon };
+                liveTrackPoints.push({
+                    index: 0,
+                    lat,
+                    lon,
+                    accumulatedDistance: 0,
+                    lateralOffset: 0,
+                    accuracy,
+                    timestamp
+                });
+                guardarTrayectoGPS();
+            }
+
+            const desvioActual = calcularDesvioLateral(lat, lon);
+            const desvioEl = document.getElementById('gps-track-offset');
+            desvioEl.textContent = `${desvioActual >= 0 ? '+' : '-'}${Math.abs(desvioActual).toFixed(1)} m ${desvioActual >= 0 ? 'DERECHA' : 'IZQUIERDA'}`;
+            desvioEl.className = Math.abs(desvioActual) <= 15
+                ? "text-xs text-emerald-300 font-mono"
+                : "text-xs text-amber-300 font-mono";
+
+            if (accuracy > 50 || liveTrackLastPoint === null) {
+                actualizarEstadoTrayecto();
+                return;
+            }
+
+            const distanciaDesdeUltimo = calcularDistanciaHaversine(
+                liveTrackLastPoint.lat,
+                liveTrackLastPoint.lon,
+                lat,
+                lon
+            );
+
+            if (distanciaDesdeUltimo >= 15) {
+                liveTrackDistance += distanciaDesdeUltimo;
+                liveTrackLastPoint = { lat, lon };
+
+                liveTrackPoints.push({
+                    index: liveTrackPoints.length,
+                    lat,
+                    lon,
+                    accumulatedDistance: liveTrackDistance,
+                    lateralOffset: desvioActual,
+                    accuracy,
+                    timestamp
+                });
+
+                guardarTrayectoGPS();
+                dibujarTrayectoGPS();
+                actualizarEstadoTrayecto();
+            }
+        }
+
+        function dibujarTrayectoGPS() {
+            if (!liveTrackLayerGroup) return;
+            liveTrackLayerGroup.clearLayers();
+
+            if (liveTrackPoints.length < 2) return;
+
+            L.polyline(liveTrackPoints.map(punto => [punto.lat, punto.lon]), {
+                color: '#a78bfa',
+                weight: 4,
+                opacity: 0.9,
+                dashArray: '5, 4'
+            }).addTo(liveTrackLayerGroup);
+
+            liveTrackPoints.forEach((punto, posicion) => {
+                if (posicion === 0) return;
+                const esDerecha = punto.lateralOffset >= 0;
+                L.circleMarker([punto.lat, punto.lon], {
+                    radius: 3.5,
+                    fillColor: esDerecha ? '#f59e0b' : '#22d3ee',
+                    color: '#081322',
+                    weight: 1,
+                    fillOpacity: 0.95
+                }).bindPopup(`
+                    <div class="text-xs font-sans">
+                        <div class="font-bold text-violet-300">Punto GPS #${punto.index}</div>
+                        <div><strong>Distancia:</strong> ${punto.accumulatedDistance.toFixed(1)} m</div>
+                        <div><strong>Desvío:</strong> ${Math.abs(punto.lateralOffset).toFixed(1)} m ${esDerecha ? 'DERECHA' : 'IZQUIERDA'}</div>
+                        <div><strong>Precisión:</strong> ±${punto.accuracy} m</div>
+                    </div>
+                `).addTo(liveTrackLayerGroup);
+            });
+        }
+
+        function actualizarEstadoTrayecto() {
+            document.getElementById('gps-track-count').textContent = String(Math.max(0, liveTrackPoints.length - 1));
+            document.getElementById('gps-track-distance').textContent = `${liveTrackDistance.toFixed(1)} m`;
+        }
+
+        function guardarTrayectoGPS() {
+            try {
+                localStorage.setItem('navtrack_live_gps_track', JSON.stringify({
+                    start: liveTrackStart,
+                    bearing: liveTrackBearing,
+                    distance: liveTrackDistance,
+                    points: liveTrackPoints
+                }));
+            } catch (e) {
+                // El registro sigue activo en memoria si el navegador bloquea almacenamiento local.
+            }
+        }
+
+        function detenerGPS(notificar) {
+            if (gpsWatchId !== null) {
+                navigator.geolocation.clearWatch(gpsWatchId);
+                gpsWatchId = null;
+            }
+            if (gpsAccuracyCircle) {
+                map.removeLayer(gpsAccuracyCircle);
+                gpsAccuracyCircle = null;
+            }
+
+            document.getElementById('gps-status').classList.add('hidden');
+            document.getElementById('gps-toggle-text').textContent = "Mi GPS";
+            document.getElementById('gps-toggle').className = "text-xs bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition active:scale-95 font-medium";
+            document.getElementById('gps-led').className = "w-2 h-2 rounded-full bg-slate-500";
+
+            document.getElementById('header-gps-dot').className = "w-2 h-2 rounded-full bg-slate-500";
+            document.getElementById('header-gps-text').textContent = "GPS: Inactivo";
+
+            if (notificar) mostrarToast("Seguimiento GPS detenido.", "info");
+        }
+
+        // ==========================================
+        // 9. CONTROLES DE INTERFAZ & EXPORTACIÓN
+        // ==========================================
+
+        function cambiarModo(modo) {
+            currentMode = modo;
+            const tabDestino = document.getElementById('tab-destino');
+            const tabRumbo = document.getElementById('tab-rumbo');
+            const panelDestino = document.getElementById('panel-modo-destino');
+            const panelRumbo = document.getElementById('panel-modo-rumbo');
+
+            if (modo === 'destino') {
+                tabDestino.className = "py-1.5 px-2 text-xs font-semibold rounded-lg bg-cyan-500 text-nautical-950 shadow transition";
+                tabRumbo.className = "py-1.5 px-2 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition";
+                panelDestino.classList.remove('hidden');
+                panelRumbo.classList.add('hidden');
+            } else {
+                tabRumbo.className = "py-1.5 px-2 text-xs font-semibold rounded-lg bg-cyan-500 text-nautical-950 shadow transition";
+                tabDestino.className = "py-1.5 px-2 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition";
+                panelRumbo.classList.remove('hidden');
+                panelDestino.classList.add('hidden');
+            }
+            recalcularTodo();
+        }
+
+        function setMapClickMode(mode) {
+            mapClickMode = mode;
+            const btnBeach = document.getElementById('click-mode-beach');
+            const btnShip = document.getElementById('click-mode-ship');
+
+            if (mode === 'beach') {
+                btnBeach.className = "px-2.5 py-1 text-xs font-medium rounded-md bg-amber-500 text-nautical-950 transition";
+                btnShip.className = "px-2.5 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-white transition";
+            } else {
+                btnShip.className = "px-2.5 py-1 text-xs font-medium rounded-md bg-cyan-400 text-nautical-950 transition";
+                btnBeach.className = "px-2.5 py-1 text-xs font-medium rounded-md text-slate-400 hover:text-white transition";
+            }
+        }
+
+        function centrarMapa() {
+            if (!routeSummary.shipLat) return;
+            const bounds = L.latLngBounds(
+                [routeSummary.shipLat, routeSummary.shipLon],
+                [routeSummary.beachLat, routeSummary.beachLon]
+            );
+            map.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+        }
+
+        function enfocarPunto(lat, lon, index) {
+            map.setView([lat, lon], 19, { animate: true });
+            mostrarToast(`Centrado en Estación #${index}`, 'info');
+        }
+
+        function cargarEscenario(key) {
+            const p = PRESETS[key];
+            if (!p) return;
+            document.getElementById('ship-lat').value = p.shipLat.toFixed(6);
+            document.getElementById('ship-lon').value = p.shipLon.toFixed(6);
+            document.getElementById('beach-lat').value = p.beachLat.toFixed(6);
+            document.getElementById('beach-lon').value = p.beachLon.toFixed(6);
+            document.getElementById('depth-origin').value = p.depthOrigin.toFixed(1);
+            document.getElementById('depth-beach').value = p.depthBeach.toFixed(2);
+            document.getElementById('vessel-draft').value = p.draft.toFixed(2);
+            document.getElementById('min-ukc').value = p.minUkc.toFixed(2);
+            document.getElementById('tide-level').value = p.tide;
+            actualizarSliderMarea(p.tide);
+            document.getElementById('current-dir').value = p.currentDir;
+            document.getElementById('current-speed').value = p.currentSpeed;
+            recalcularTodo();
+            centrarMapa();
+            mostrarToast(`Escenario cargado: ${key.toUpperCase()}`, 'info');
+        }
+
+        function copiarCoordenadas() {
+            if (!generatedWaypoints.length) return;
+            let text = "Estacion\tDistancia_m\tLatitud\tLongitud\tSonda_Marea_m\tUKC_m\tEstado\tTiempo\n";
+            generatedWaypoints.forEach(wp => {
+                text += `#${wp.index}\t${wp.distance.toFixed(1)}\t${wp.lat.toFixed(6)}\t${wp.lon.toFixed(6)}\t${wp.actualDepth.toFixed(2)}\t${wp.ukc.toFixed(2)}\t${wp.safetyStatus.toUpperCase()}\t${formatearTiempo(wp.elapsedSeconds)}\n`;
+            });
+
+            const helper = document.getElementById('clipboard-helper');
+            helper.value = text;
+            helper.select();
+            try {
+                document.execCommand('copy');
+                mostrarToast(`¡${generatedWaypoints.length} estaciones con batimetría copiadas!`, 'emerald');
+            } catch (e) {
+                mostrarToast("Error al copiar al portapapeles.", "rose");
+            }
+        }
+
+        function descargarArchivo(contenido, nombreArchivo, tipoMime) {
+            const blob = new Blob([contenido], { type: tipoMime });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = nombreArchivo;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function descargarCSV() {
+            let csv = "Estacion,Distancia_Metros,Latitud,Longitud,Sonda_Con_Marea_Metros,UKC_Holgura_Quilla_Metros,Estado_Seguridad,Tiempo_Seg\n";
+            generatedWaypoints.forEach(wp => {
+                csv += `${wp.index},${wp.distance.toFixed(2)},${wp.lat.toFixed(6)},${wp.lon.toFixed(6)},${wp.actualDepth.toFixed(2)},${wp.ukc.toFixed(2)},${wp.safetyStatus.toUpperCase()},${wp.elapsedSeconds.toFixed(1)}\n`;
+            });
+            descargarArchivo(csv, `navtrack_batimetria_${routeSummary.stepInterval}m.csv`, 'text/csv;charset=utf-8;');
+            mostrarToast("CSV batimétrico exportado.", "emerald");
+        }
+
+        function descargarTrayectoGPS() {
+            if (!liveTrackPoints.length) {
+                mostrarToast("No hay puntos GPS registrados.", "rose");
+                return;
+            }
+
+            let csv = "Punto,Latitud,Longitud,Distancia_Acumulada_Metros,Desvio_Lateral_Metros,Lado,Precision_Metros,Fecha_Hora_ISO\n";
+            liveTrackPoints.forEach(punto => {
+                const lado = punto.lateralOffset === 0 ? "CENTRO" : (punto.lateralOffset > 0 ? "DERECHA" : "IZQUIERDA");
+                const fecha = new Date(punto.timestamp).toISOString();
+                csv += `${punto.index},${punto.lat.toFixed(6)},${punto.lon.toFixed(6)},${punto.accumulatedDistance.toFixed(2)},${punto.lateralOffset.toFixed(2)},${lado},${punto.accuracy},${fecha}\n`;
+            });
+
+            descargarArchivo(csv, `navtrack_trayecto_gps_${new Date().toISOString().slice(0, 10)}.csv`, 'text/csv;charset=utf-8;');
+            mostrarToast(`Trayecto GPS exportado: ${Math.max(0, liveTrackPoints.length - 1)} puntos cada 15 m.`, "emerald");
+        }
+
+        function descargarGeoJSON() {
+            const features = generatedWaypoints.map(wp => ({
+                type: "Feature",
+                properties: {
+                    station: wp.index,
+                    distance_m: Number(wp.distance.toFixed(2)),
+                    depth_m: Number(wp.actualDepth.toFixed(2)),
+                    ukc_m: Number(wp.ukc.toFixed(2)),
+                    safety: wp.safetyStatus,
+                    elapsed_seconds: Number(wp.elapsedSeconds.toFixed(1))
+                },
+                geometry: {
+                    type: "Point",
+                    coordinates: [Number(wp.lon.toFixed(6)), Number(wp.lat.toFixed(6))]
+                }
+            }));
+
+            features.unshift({
+                type: "Feature",
+                properties: {
+                    name: "Derrota Náutica hacia Playa",
+                    draft_m: routeSummary.vesselDraft,
+                    tide_m: routeSummary.tideLevel,
+                    bearing_deg: Number(routeSummary.bearing.toFixed(2)),
+                    total_distance_m: Number(routeSummary.totalDistance.toFixed(2))
+                },
+                geometry: {
+                    type: "LineString",
+                    coordinates: generatedWaypoints.map(wp => [Number(wp.lon.toFixed(6)), Number(wp.lat.toFixed(6))])
+                }
+            });
+
+            const geojson = {
+                type: "FeatureCollection",
+                features: features
+            };
+
+            descargarArchivo(JSON.stringify(geojson, null, 2), `navtrack_${routeSummary.stepInterval}m.geojson`, 'application/geo+json');
+            mostrarToast("GeoJSON batimétrico exportado.", "info");
+        }
+
+        function descargarGPX() {
+            let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="NavTrack 15m" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+            generatedWaypoints.forEach(wp => {
+                gpx += `  <wpt lat="${wp.lat.toFixed(6)}" lon="${wp.lon.toFixed(6)}">\n`;
+                gpx += `    <name>WP-${wp.index} (${wp.distance.toFixed(0)}m)</name>\n`;
+                gpx += `    <desc>Sonda: ${wp.actualDepth.toFixed(2)}m | UKC: ${wp.ukc.toFixed(2)}m | Estado: ${wp.safetyStatus.toUpperCase()}</desc>\n`;
+                gpx += `  </wpt>\n`;
+            });
+            gpx += `</gpx>`;
+
+            descargarArchivo(gpx, `navtrack_ruta_${routeSummary.stepInterval}m.gpx`, 'application/gpx+xml');
+            mostrarToast("Ruta GPX lista para plotter náutico.", "amber");
+        }
+
+        function mostrarToast(mensaje, tipo = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+
+            const colores = {
+                info: 'bg-nautical-800 border-cyan-500/60 text-cyan-200',
+                emerald: 'bg-nautical-800 border-emerald-500/60 text-emerald-200',
+                amber: 'bg-nautical-800 border-amber-500/60 text-amber-200',
+                rose: 'bg-nautical-800 border-rose-500/60 text-rose-200'
+            };
+
+            toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl border shadow-2xl text-xs font-medium flex items-center gap-2 transition-all duration-300 transform translate-y-2 opacity-0 ${colores[tipo] || colores.info}`;
+            toast.innerHTML = `<span>${mensaje}</span>`;
+
+            container.appendChild(toast);
+            requestAnimationFrame(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            });
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 3200);
+        }
+
+        // Redimensionar canvas dinámicamente
+        window.addEventListener('resize', () => {
+            dibujarPerfilBatimetrico();
+        });
+
+        function cargarTrayectoGPSGuardado() {
+            try {
+                const guardado = JSON.parse(localStorage.getItem('navtrack_live_gps_track'));
+                if (!guardado || !Array.isArray(guardado.points) || !guardado.points.length) return;
+
+                liveTrackStart = guardado.start;
+                liveTrackBearing = guardado.bearing;
+                liveTrackDistance = Number(guardado.distance) || 0;
+                liveTrackLastPoint = guardado.points[guardado.points.length - 1] || null;
+                liveTrackPoints = guardado.points;
+                document.getElementById('gps-track-status').classList.remove('hidden');
+                actualizarEstadoTrayecto();
+                dibujarTrayectoGPS();
+            } catch (e) {
+                // Ignorar registros locales corruptos sin afectar la aplicación.
+            }
+        }
+
+        // Limpieza de GPS al cerrar
+        window.addEventListener('beforeunload', () => {
+            if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
+        });
+
+        // ==========================================
+        // COMPÁS NÁUTICO / BRÚJULA TÁCTICA
+        // ==========================================
+
+        function actualizarBrujula() {
+            const widget = document.getElementById('compass-widget');
+            if (!widget || !compassVisible) return;
+
+            const currentHdg = sensorHeading !== null
+                ? sensorHeading
+                : (routeSummary.steerHeadingDeg !== undefined ? routeSummary.steerHeadingDeg : (routeSummary.bearing || 0));
+            const targetBrg = routeSummary.bearing !== undefined ? routeSummary.bearing : 0;
+            const steerCourse = routeSummary.steerHeadingDeg !== undefined ? routeSummary.steerHeadingDeg : 0;
+            const currentDir = parseFloat(document.getElementById('current-dir') ? document.getElementById('current-dir').value : 0) || 0;
+
+            const roseGroup = document.getElementById('compass-rose-group');
+            const needleHdg = document.getElementById('compass-needle-hdg');
+            const needleBrg = document.getElementById('compass-needle-brg');
+            const needleCts = document.getElementById('compass-needle-cts');
+            const needleCurrent = document.getElementById('compass-needle-current');
+
+            const centerDeg = document.getElementById('compass-center-deg');
+            const centerCard = document.getElementById('compass-center-cardinal');
+            const miniDeg = document.getElementById('compass-mini-deg');
+
+            const valHdg = document.getElementById('compass-val-hdg');
+            const valBrg = document.getElementById('compass-val-brg');
+            const valCts = document.getElementById('compass-val-cts');
+
+            let roseRotation = 0;
+            let hdgRotation = currentHdg;
+            let brgRotation = targetBrg;
+            let ctsRotation = steerCourse;
+            let currentRotation = currentDir;
+
+            if (compassMode === 'proa-arriba') {
+                roseRotation = -currentHdg;
+                hdgRotation = 0;
+                brgRotation = targetBrg - currentHdg;
+                ctsRotation = steerCourse - currentHdg;
+                currentRotation = currentDir - currentHdg;
+            } else if (compassMode === 'sensor' && deviceCompassHeading !== null) {
+                roseRotation = -deviceCompassHeading;
+                hdgRotation = currentHdg - deviceCompassHeading;
+                brgRotation = targetBrg - deviceCompassHeading;
+                ctsRotation = steerCourse - deviceCompassHeading;
+                currentRotation = currentDir - deviceCompassHeading;
+            }
+
+            if (roseGroup) roseGroup.style.transform = `rotate(${roseRotation}deg)`;
+            if (needleHdg) needleHdg.style.transform = `rotate(${hdgRotation}deg)`;
+            if (needleBrg) needleBrg.style.transform = `rotate(${brgRotation}deg)`;
+            if (needleCts) needleCts.style.transform = `rotate(${ctsRotation}deg)`;
+            if (needleCurrent) needleCurrent.style.transform = `rotate(${currentRotation}deg)`;
+
+            const displayHdg = Math.round((currentHdg % 360 + 360) % 360);
+            if (centerDeg) centerDeg.textContent = `${displayHdg}°`;
+            if (centerCard) centerCard.textContent = obtenerPuntoCardinal(displayHdg);
+            if (miniDeg) miniDeg.textContent = `${displayHdg}° ${obtenerPuntoCardinal(displayHdg)}`;
+
+            if (valHdg) valHdg.textContent = `${currentHdg.toFixed(1)}°`;
+            if (valBrg) valBrg.textContent = `${targetBrg.toFixed(1)}°`;
+            if (valCts) valCts.textContent = `${steerCourse.toFixed(1)}°`;
+        }
+
+        function ciclarModoBrujula() {
+            const label = document.getElementById('compass-mode-label');
+            if (compassMode === 'norte-arriba') {
+                compassMode = 'proa-arriba';
+                if (label) label.textContent = 'Proa-Arriba';
+                mostrarToast("Compás en Modo Proa-Arriba (Head-Up)", "info");
+            } else if (compassMode === 'proa-arriba') {
+                compassMode = 'sensor';
+                if (label) label.textContent = 'Sensor Giro';
+                activarSensorBrujula();
+            } else {
+                compassMode = 'norte-arriba';
+                if (label) label.textContent = 'Norte-Arriba';
+                mostrarToast("Compás en Modo Norte-Arriba (North-Up)", "info");
+            }
+            actualizarBrujula();
+        }
+
+        function alternarVisibilidadBrujula() {
+            const widget = document.getElementById('compass-widget');
+            const btn = document.getElementById('btn-toggle-compass');
+            compassVisible = !compassVisible;
+            if (widget) {
+                if (compassVisible) {
+                    widget.classList.remove('hidden');
+                    if (btn) btn.className = "px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 active:scale-95 shadow-sm";
+                    actualizarBrujula();
+                } else {
+                    widget.classList.add('hidden');
+                    if (btn) btn.className = "px-2.5 py-1 bg-nautical-800 text-slate-400 border border-nautical-700 hover:text-white text-xs font-medium rounded-lg transition flex items-center gap-1.5 active:scale-95";
+                }
+            }
+        }
+
+        function alternarMinimizadoBrujula() {
+            const expanded = document.getElementById('compass-expanded-content');
+            const minimized = document.getElementById('compass-minimized-content');
+            const btnMin = document.getElementById('btn-minimize-compass');
+            compassMinimized = !compassMinimized;
+            if (compassMinimized) {
+                expanded.classList.add('hidden');
+                minimized.classList.remove('hidden');
+                if (btnMin) btnMin.textContent = '□';
+            } else {
+                expanded.classList.remove('hidden');
+                minimized.classList.add('hidden');
+                if (btnMin) btnMin.textContent = '─';
+                actualizarBrujula();
+            }
+        }
+
+        function activarSensorBrujula() {
+            if (sensorListenerActive) {
+                mostrarToast("Sensor de brújula ya activo.", "info");
+                return;
+            }
+
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', manejarOrientacionDispositivo, true);
+                            sensorListenerActive = true;
+                            mostrarToast("Brújula del sensor del dispositivo activada.", "emerald");
+                        } else {
+                            mostrarToast("Permiso de orientación denegado.", "rose");
+                            compassMode = 'norte-arriba';
+                            const label = document.getElementById('compass-mode-label');
+                            if (label) label.textContent = 'Norte-Arriba';
+                        }
+                    })
+                    .catch(() => {
+                        mostrarToast("Error solicitando sensor de orientación.", "rose");
+                        compassMode = 'norte-arriba';
+                        const label = document.getElementById('compass-mode-label');
+                        if (label) label.textContent = 'Norte-Arriba';
+                    });
+            } else if ('ondeviceorientationabsolute' in window) {
+                window.addEventListener('deviceorientationabsolute', manejarOrientacionDispositivo, true);
+                sensorListenerActive = true;
+                mostrarToast("Brújula giroscópica activa.", "emerald");
+            } else if ('ondeviceorientation' in window) {
+                window.addEventListener('deviceorientation', manejarOrientacionDispositivo, true);
+                sensorListenerActive = true;
+                mostrarToast("Sensor de orientación activo.", "emerald");
+            } else {
+                mostrarToast("Este dispositivo no cuenta con sensor de brújula magnética.", "amber");
+            }
+        }
+
+        function manejarOrientacionDispositivo(event) {
+            let heading = null;
+            if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
+                heading = event.webkitCompassHeading;
+            } else if (event.alpha !== null && event.alpha !== undefined) {
+                heading = (360 - event.alpha) % 360;
+            }
+            if (heading !== null && !isNaN(heading)) {
+                deviceCompassHeading = heading;
+                if (compassMode === 'sensor') {
+                    actualizarBrujula();
+                }
+            }
+        }
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initMap();
+            recalcularTodo();
+            centrarMapa();
+            cargarTrayectoGPSGuardado();
+            actualizarBrujula();
+        });
+    </script>
+</body>
+</html>

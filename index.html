@@ -461,8 +461,8 @@
                 </div>
             </div>
 
-            <!-- Contenedor del Mapa Interactivo Leaflet -->
-            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+            <!-- Contenedor del Mapa Interactivo Leaflet con Compás Náutico Flotante -->
+            <div class="bg-nautical-900 border border-nautical-700/80 rounded-2xl overflow-hidden shadow-2xl flex flex-col relative">
                 <!-- Barra de herramientas del mapa -->
                 <div class="px-4 py-2 bg-nautical-800/90 border-b border-nautical-700 flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
@@ -478,10 +478,132 @@
                     </div>
 
                     <div class="flex items-center gap-2">
+                        <!-- Botón Toggle Brújula -->
+                        <button type="button" id="btn-toggle-compass" onclick="alternarVisibilidadBrujula()" class="px-2.5 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-500/50 text-cyan-300 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 active:scale-95 shadow-sm" title="Mostrar u ocultar la Brújula Náutica">
+                            <svg class="w-3.5 h-3.5 text-cyan-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polygon points="12 3 15 12 12 21 9 12" fill="currentColor"/>
+                            </svg>
+                            <span>Brújula</span>
+                        </button>
                         <button type="button" onclick="centrarMapa()" class="px-3 py-1 bg-nautical-700 hover:bg-nautical-600 text-xs text-white rounded-lg transition flex items-center gap-1.5">
                             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"/></svg>
                             Encuadrar
                         </button>
+                    </div>
+                </div>
+
+                <!-- Widget Flotante: Brújula Náutica Táctica (Compás de Rumbo) -->
+                <div id="compass-widget" class="absolute top-12 right-3 z-[400] bg-nautical-950/90 backdrop-blur-md border border-nautical-700/90 rounded-2xl p-2.5 shadow-2xl transition-all duration-300 w-[170px] sm:w-[185px] select-none">
+                    <!-- Cabecera del Compás -->
+                    <div class="flex items-center justify-between pb-1.5 border-b border-nautical-800 text-[11px]">
+                        <span class="font-bold text-slate-200 flex items-center gap-1">
+                            <span class="text-cyan-400 text-xs">🧭</span> COMPÁS
+                        </span>
+                        <div class="flex items-center gap-1">
+                            <button type="button" onclick="alternarMinimizadoBrujula()" id="btn-minimize-compass" class="text-slate-400 hover:text-white px-1 py-0.5 rounded text-xs leading-none font-mono" title="Minimizar / Expandir Compás">
+                                ─
+                            </button>
+                            <button type="button" onclick="alternarVisibilidadBrujula()" class="text-slate-400 hover:text-rose-400 px-1 py-0.5 rounded text-xs leading-none font-mono" title="Cerrar Compás">
+                                ✕
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Contenido expandido del Compás -->
+                    <div id="compass-expanded-content" class="mt-2 flex flex-col items-center">
+                        <div class="w-[136px] h-[136px] relative">
+                            <!-- SVG Dial Náutico de 360 Grados -->
+                            <svg id="compass-svg" viewBox="0 0 200 200" class="w-full h-full drop-shadow-lg">
+                                <!-- Bisel exterior estático -->
+                                <circle cx="100" cy="100" r="96" fill="#081322" stroke="#183354" stroke-width="3"/>
+                                <circle cx="100" cy="100" r="89" fill="none" stroke="#234a78" stroke-width="1.5" stroke-dasharray="2, 4"/>
+                                
+                                <!-- Rosa de los vientos graduada (Gira en Head-Up o Sensor) -->
+                                <g id="compass-rose-group" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <circle cx="100" cy="100" r="85" fill="#040b14" stroke="#00e5ff" stroke-opacity="0.3" stroke-width="1"/>
+                                    
+                                    <!-- Puntos Cardinales e Intercardinales -->
+                                    <text x="100" y="26" text-anchor="middle" font-size="14" font-weight="bold" fill="#00e5ff" font-family="'Inter', sans-serif">N</text>
+                                    <text x="176" y="105" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">E</text>
+                                    <text x="100" y="182" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">S</text>
+                                    <text x="24" y="105" text-anchor="middle" font-size="13" font-weight="bold" fill="#f8fafc" font-family="'Inter', sans-serif">W</text>
+                                    
+                                    <text x="153" y="47" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">NE</text>
+                                    <text x="155" y="157" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">SE</text>
+                                    <text x="45" y="157" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">SW</text>
+                                    <text x="45" y="47" text-anchor="middle" font-size="9" font-weight="600" fill="#94a3b8" font-family="'JetBrains Mono', monospace">NW</text>
+                                    
+                                    <!-- Marcas de graduación cada 30 grados -->
+                                    <line x1="100" y1="16" x2="100" y2="24" stroke="#00e5ff" stroke-width="2.5"/>
+                                    <line x1="142" y1="27" x2="138" y2="34" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="173" y1="58" x2="166" y2="62" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="184" y1="100" x2="176" y2="100" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="173" y1="142" x2="166" y2="138" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="142" y1="173" x2="138" y2="166" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="100" y1="184" x2="100" y2="176" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="58" y1="173" x2="62" y2="166" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="27" y1="142" x2="34" y2="138" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="16" y1="100" x2="24" y2="100" stroke="#f8fafc" stroke-width="2"/>
+                                    <line x1="27" y1="58" x2="34" y2="62" stroke="#94a3b8" stroke-width="1.5"/>
+                                    <line x1="58" y1="27" x2="62" y2="34" stroke="#94a3b8" stroke-width="1.5"/>
+                                </g>
+
+                                <!-- Agujas e Indicadores de Derrota -->
+                                <!-- 1. Vector Corriente Marina (Azul punteado) -->
+                                <g id="compass-needle-current" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="38" stroke="#3b82f6" stroke-width="1.5" stroke-dasharray="3, 2"/>
+                                    <polygon points="100,28 96,38 104,38" fill="#3b82f6"/>
+                                </g>
+
+                                <!-- 2. Rumbo a Gobernar CTS (Verde esmeralda) -->
+                                <g id="compass-needle-cts" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="30" stroke="#10b981" stroke-width="2"/>
+                                    <circle cx="100" cy="28" r="3.5" fill="#10b981" stroke="#040b14" stroke-width="1"/>
+                                </g>
+
+                                <!-- 3. Rumbo directo a Playa BRG (Ámbar con puntero objetivo) -->
+                                <g id="compass-needle-brg" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <line x1="100" y1="100" x2="100" y2="22" stroke="#f59e0b" stroke-width="2.5"/>
+                                    <polygon points="100,14 94,24 106,24" fill="#f59e0b"/>
+                                </g>
+
+                                <!-- 4. Proa del Buque HDG (Cian náutico) -->
+                                <g id="compass-needle-hdg" style="transform-origin: 100px 100px; transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.4, 1);">
+                                    <polygon points="100,20 92,100 100,91 108,100" fill="#00e5ff" opacity="0.95"/>
+                                    <polygon points="100,100 95,124 100,118 105,124" fill="#234a78" opacity="0.75"/>
+                                </g>
+
+                                <!-- Núcleo Digital Central -->
+                                <circle cx="100" cy="100" r="28" fill="#081322" stroke="#183354" stroke-width="2"/>
+                                <text id="compass-center-deg" x="100" y="98" text-anchor="middle" font-size="14" font-weight="bold" fill="#00e5ff" font-family="'JetBrains Mono', monospace">283°</text>
+                                <text id="compass-center-cardinal" x="100" y="112" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8" font-family="'Inter', sans-serif">ONO</text>
+                                
+                                <!-- Línea de Fe / Lubber Line roja en las 12 -->
+                                <polygon points="100,2 96,11 104,11" fill="#f43f5e"/>
+                            </svg>
+                        </div>
+
+                        <!-- Selector de Modo de Brújula -->
+                        <button type="button" onclick="ciclarModoBrujula()" id="compass-mode-btn" class="w-full mt-2 py-1 px-2 rounded-lg bg-nautical-900 hover:bg-nautical-800 border border-nautical-700 text-[10px] font-mono text-cyan-300 transition flex items-center justify-between" title="Alternar modo: Norte Arriba / Proa Arriba / Sensor Dispositivo">
+                            <span class="text-slate-400">Modo:</span>
+                            <span id="compass-mode-label" class="font-bold text-white">Norte-Arriba</span>
+                        </button>
+
+                        <!-- Telemetría compacta del compás -->
+                        <div class="w-full mt-1.5 pt-1.5 border-t border-nautical-800/80 text-[10px] font-mono space-y-0.5">
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-cyan-400"></span> Proa HDG:</span><span id="compass-val-hdg" class="text-cyan-300 font-bold">282.6°</span></div>
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-amber-400"></span> Playa BRG:</span><span id="compass-val-brg" class="text-amber-300 font-bold">282.6°</span></div>
+                            <div class="flex justify-between items-center"><span class="text-slate-400 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-emerald-400"></span> Timón CTS:</span><span id="compass-val-cts" class="text-emerald-300 font-bold">274.2°</span></div>
+                        </div>
+                    </div>
+
+                    <!-- Vista compacta minimizada (oculta por defecto) -->
+                    <div id="compass-minimized-content" class="hidden mt-1 cursor-pointer" onclick="alternarMinimizadoBrujula()">
+                        <div class="flex items-center justify-between bg-nautical-900/90 rounded-lg px-2 py-1 border border-nautical-700 hover:border-cyan-500/50 transition">
+                            <span class="font-mono font-bold text-xs text-cyan-400" id="compass-mini-deg">283° ONO</span>
+                            <span class="text-[9px] text-slate-400">Abrir 🧭</span>
+                        </div>
                     </div>
                 </div>
 
@@ -582,6 +704,13 @@
         let liveTrackLastPoint = null;
         let liveTrackDistance = 0;
         let liveTrackLayerGroup = null;
+
+        // Variables de la Brújula / Compás Náutico
+        let compassMode = 'norte-arriba'; // 'norte-arriba' | 'proa-arriba' | 'sensor'
+        let deviceCompassHeading = null;
+        let compassVisible = true;
+        let compassMinimized = false;
+        let sensorListenerActive = false;
 
         // Variables de Leaflet
         let map;
@@ -902,6 +1031,7 @@
             dibujarPerfilBatimetrico();
             actualizarMapa();
             actualizarTabla();
+            actualizarBrujula();
         }
 
         // ==========================================
@@ -1831,11 +1961,182 @@
             if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
         });
 
+        // ==========================================
+        // COMPÁS NÁUTICO / BRÚJULA TÁCTICA
+        // ==========================================
+
+        function actualizarBrujula() {
+            const widget = document.getElementById('compass-widget');
+            if (!widget || !compassVisible) return;
+
+            const currentHdg = sensorHeading !== null
+                ? sensorHeading
+                : (routeSummary.steerHeadingDeg !== undefined ? routeSummary.steerHeadingDeg : (routeSummary.bearing || 0));
+            const targetBrg = routeSummary.bearing !== undefined ? routeSummary.bearing : 0;
+            const steerCourse = routeSummary.steerHeadingDeg !== undefined ? routeSummary.steerHeadingDeg : 0;
+            const currentDir = parseFloat(document.getElementById('current-dir') ? document.getElementById('current-dir').value : 0) || 0;
+
+            const roseGroup = document.getElementById('compass-rose-group');
+            const needleHdg = document.getElementById('compass-needle-hdg');
+            const needleBrg = document.getElementById('compass-needle-brg');
+            const needleCts = document.getElementById('compass-needle-cts');
+            const needleCurrent = document.getElementById('compass-needle-current');
+
+            const centerDeg = document.getElementById('compass-center-deg');
+            const centerCard = document.getElementById('compass-center-cardinal');
+            const miniDeg = document.getElementById('compass-mini-deg');
+
+            const valHdg = document.getElementById('compass-val-hdg');
+            const valBrg = document.getElementById('compass-val-brg');
+            const valCts = document.getElementById('compass-val-cts');
+
+            let roseRotation = 0;
+            let hdgRotation = currentHdg;
+            let brgRotation = targetBrg;
+            let ctsRotation = steerCourse;
+            let currentRotation = currentDir;
+
+            if (compassMode === 'proa-arriba') {
+                roseRotation = -currentHdg;
+                hdgRotation = 0;
+                brgRotation = targetBrg - currentHdg;
+                ctsRotation = steerCourse - currentHdg;
+                currentRotation = currentDir - currentHdg;
+            } else if (compassMode === 'sensor' && deviceCompassHeading !== null) {
+                roseRotation = -deviceCompassHeading;
+                hdgRotation = currentHdg - deviceCompassHeading;
+                brgRotation = targetBrg - deviceCompassHeading;
+                ctsRotation = steerCourse - deviceCompassHeading;
+                currentRotation = currentDir - deviceCompassHeading;
+            }
+
+            if (roseGroup) roseGroup.style.transform = `rotate(${roseRotation}deg)`;
+            if (needleHdg) needleHdg.style.transform = `rotate(${hdgRotation}deg)`;
+            if (needleBrg) needleBrg.style.transform = `rotate(${brgRotation}deg)`;
+            if (needleCts) needleCts.style.transform = `rotate(${ctsRotation}deg)`;
+            if (needleCurrent) needleCurrent.style.transform = `rotate(${currentRotation}deg)`;
+
+            const displayHdg = Math.round((currentHdg % 360 + 360) % 360);
+            if (centerDeg) centerDeg.textContent = `${displayHdg}°`;
+            if (centerCard) centerCard.textContent = obtenerPuntoCardinal(displayHdg);
+            if (miniDeg) miniDeg.textContent = `${displayHdg}° ${obtenerPuntoCardinal(displayHdg)}`;
+
+            if (valHdg) valHdg.textContent = `${currentHdg.toFixed(1)}°`;
+            if (valBrg) valBrg.textContent = `${targetBrg.toFixed(1)}°`;
+            if (valCts) valCts.textContent = `${steerCourse.toFixed(1)}°`;
+        }
+
+        function ciclarModoBrujula() {
+            const label = document.getElementById('compass-mode-label');
+            if (compassMode === 'norte-arriba') {
+                compassMode = 'proa-arriba';
+                if (label) label.textContent = 'Proa-Arriba';
+                mostrarToast("Compás en Modo Proa-Arriba (Head-Up)", "info");
+            } else if (compassMode === 'proa-arriba') {
+                compassMode = 'sensor';
+                if (label) label.textContent = 'Sensor Giro';
+                activarSensorBrujula();
+            } else {
+                compassMode = 'norte-arriba';
+                if (label) label.textContent = 'Norte-Arriba';
+                mostrarToast("Compás en Modo Norte-Arriba (North-Up)", "info");
+            }
+            actualizarBrujula();
+        }
+
+        function alternarVisibilidadBrujula() {
+            const widget = document.getElementById('compass-widget');
+            const btn = document.getElementById('btn-toggle-compass');
+            compassVisible = !compassVisible;
+            if (widget) {
+                if (compassVisible) {
+                    widget.classList.remove('hidden');
+                    if (btn) btn.className = "px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 active:scale-95 shadow-sm";
+                    actualizarBrujula();
+                } else {
+                    widget.classList.add('hidden');
+                    if (btn) btn.className = "px-2.5 py-1 bg-nautical-800 text-slate-400 border border-nautical-700 hover:text-white text-xs font-medium rounded-lg transition flex items-center gap-1.5 active:scale-95";
+                }
+            }
+        }
+
+        function alternarMinimizadoBrujula() {
+            const expanded = document.getElementById('compass-expanded-content');
+            const minimized = document.getElementById('compass-minimized-content');
+            const btnMin = document.getElementById('btn-minimize-compass');
+            compassMinimized = !compassMinimized;
+            if (compassMinimized) {
+                expanded.classList.add('hidden');
+                minimized.classList.remove('hidden');
+                if (btnMin) btnMin.textContent = '□';
+            } else {
+                expanded.classList.remove('hidden');
+                minimized.classList.add('hidden');
+                if (btnMin) btnMin.textContent = '─';
+                actualizarBrujula();
+            }
+        }
+
+        function activarSensorBrujula() {
+            if (sensorListenerActive) {
+                mostrarToast("Sensor de brújula ya activo.", "info");
+                return;
+            }
+
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission()
+                    .then(permissionState => {
+                        if (permissionState === 'granted') {
+                            window.addEventListener('deviceorientation', manejarOrientacionDispositivo, true);
+                            sensorListenerActive = true;
+                            mostrarToast("Brújula del sensor del dispositivo activada.", "emerald");
+                        } else {
+                            mostrarToast("Permiso de orientación denegado.", "rose");
+                            compassMode = 'norte-arriba';
+                            const label = document.getElementById('compass-mode-label');
+                            if (label) label.textContent = 'Norte-Arriba';
+                        }
+                    })
+                    .catch(() => {
+                        mostrarToast("Error solicitando sensor de orientación.", "rose");
+                        compassMode = 'norte-arriba';
+                        const label = document.getElementById('compass-mode-label');
+                        if (label) label.textContent = 'Norte-Arriba';
+                    });
+            } else if ('ondeviceorientationabsolute' in window) {
+                window.addEventListener('deviceorientationabsolute', manejarOrientacionDispositivo, true);
+                sensorListenerActive = true;
+                mostrarToast("Brújula giroscópica activa.", "emerald");
+            } else if ('ondeviceorientation' in window) {
+                window.addEventListener('deviceorientation', manejarOrientacionDispositivo, true);
+                sensorListenerActive = true;
+                mostrarToast("Sensor de orientación activo.", "emerald");
+            } else {
+                mostrarToast("Este dispositivo no cuenta con sensor de brújula magnética.", "amber");
+            }
+        }
+
+        function manejarOrientacionDispositivo(event) {
+            let heading = null;
+            if (event.webkitCompassHeading !== undefined && event.webkitCompassHeading !== null) {
+                heading = event.webkitCompassHeading;
+            } else if (event.alpha !== null && event.alpha !== undefined) {
+                heading = (360 - event.alpha) % 360;
+            }
+            if (heading !== null && !isNaN(heading)) {
+                deviceCompassHeading = heading;
+                if (compassMode === 'sensor') {
+                    actualizarBrujula();
+                }
+            }
+        }
+
         window.addEventListener('DOMContentLoaded', () => {
             initMap();
             recalcularTodo();
             centrarMapa();
             cargarTrayectoGPSGuardado();
+            actualizarBrujula();
         });
     </script>
 </body>
